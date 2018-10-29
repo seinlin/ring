@@ -51,8 +51,8 @@ if [[ ! "$TARGET_X" =~ "x86_64-" ]]; then
   rustup target add "$TARGET_X"
 
   # By default cargo/rustc seems to use cc for linking, We installed the
-  # multilib support that corresponds to $CC_X and $CXX_X but unless cc happens
-  # to match $CC_X, that's not the right version. The symptom is a linker error
+  # multilib support that corresponds to $CC_X but unless cc happens to match
+  # $CC_X, that's not the right version. The symptom is a linker error
   # where it fails to find -lgcc_s.
   if [[ ! -z "${CC_X-}" ]]; then
     mkdir .cargo
@@ -68,12 +68,6 @@ if [[ ! -z "${CC_X-}" ]]; then
 else
   cc --version
 fi
-if [[ ! -z "${CXX_X-}" ]]; then
-  export CXX=$CXX_X
-  $CXX --version
-else
-  c++ --version
-fi
 
 cargo version
 rustc --version
@@ -88,38 +82,9 @@ fi
 case $TARGET_X in
 armv7-linux-androideabi)
   cargo test -vv -j2 --no-run ${mode-} ${FEATURES_X-} --target=$TARGET_X
-
-  # Building the AVD is slow. Do it here, after we build the code so that any
-  # build breakage is reported sooner, instead of being delayed by this.
-  echo no | android create avd --name arm-18 --target android-18 --abi armeabi-v7a
-  android list avd
-
-  emulator @arm-18 -memory 2048 -no-skin -no-boot-anim -no-window &
-  adb wait-for-device
-
-  # Run the unit tests first.
-  adb push $target_dir/ring-* /data/ring-test
-  for testfile in `find src crypto -name "*_test*.txt" -o -name "*test*.pk8"`; do
-    adb shell mkdir -p /data/`dirname $testfile`
-    adb push $testfile /data/$testfile
-  done
-  adb shell mkdir -p /data/third-party/NIST
-  adb push third-party/NIST/SHAVS /data/third-party/NIST/SHAVS
-  adb shell "cd /data && ./ring-test" 2>&1 | tee /tmp/ring-test-log
-  grep "test result: ok" /tmp/ring-test-log
-
-  # Run the integration/functional tests.
-  for testfile in `find tests -name "*_test*.txt" -o -name "*test*.pk8"`; do
-    adb shell mkdir -p /data/`dirname $testfile`
-    adb push $testfile /data/$testfile
-  done
-  find $target_dir -maxdepth 1 -name "*test*" -type f
-  for test_exe in `find $target_dir -maxdepth 1 -name "*test*" -type f`; do
-    adb push $test_exe /data/`basename $test_exe`
-    adb shell "cd /data && ./`basename $test_exe`" 2>&1 | \
-        tee /tmp/`basename $test_exe`-log
-    grep "test result: ok" /tmp/`basename $test_exe`-log
-  done
+  # TODO: There used to be some logic for running the tests here using the
+  # Android emulator. That was removed because something broke this. See
+  # https://github.com/briansmith/ring/issues/603.
   ;;
 *)
   cargo test -vv -j2 ${mode-} ${FEATURES_X-} --target=$TARGET_X

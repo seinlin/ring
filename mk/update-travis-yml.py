@@ -17,8 +17,6 @@
 import re
 import shutil
 
-latest_clang = "clang-4.0"
-
 rusts = [
     "stable",
     "nightly",
@@ -32,16 +30,10 @@ linux_compilers = [
     # BoringSSL.
     "",
 
-    # Pre-release of clang.
-    # XXX: clang 4.0 doesn't work:
-    # https://github.com/travis-ci/apt-package-whitelist/issues/3296
-    # "clang-4.0",
-
     # Newest clang and GCC.
-    "clang-3.9",
+    "clang-5.0",
 
-    "gcc-5",
-    "gcc-6",
+    "gcc-7",
 ]
 
 # Clang 3.4 and GCC 4.6 are already installed by default.
@@ -53,7 +45,7 @@ osx_compilers = [
 
 compilers = {
     "aarch64-unknown-linux-gnu" : [ "aarch64-linux-gnu-gcc" ],
-    "armv7-linux-androideabi" : [ "arm-linux-androideabi-gcc" ],
+    "armv7-linux-androideabi" : [ "arm-linux-androideabi-clang" ],
     "arm-unknown-linux-gnueabihf" : [ "arm-linux-gnueabihf-gcc" ],
     "i686-unknown-linux-gnu" : linux_compilers,
     "x86_64-unknown-linux-gnu" : linux_compilers,
@@ -102,10 +94,8 @@ def format_entries():
 # We use alternative names (the "_X" suffix) so that, in mk/travis.sh, we can
 # enure that we set the specific variables we want and that no relevant
 # variables are unintentially inherited into the build process. Also, we have
-# to set |USE_CC| and |USE_CXX| instead of |CC| and |CXX| since Travis sets
-# |CC| and |CXX| to their default values *after* processing the |env:|
-# directive here. Also, we keep these variable names short so that the env
-# line does not get cut off in the Travis CI UI.
+# to set |CC_X| instead of |CC| since Travis sets |CC| to its Travis CI default
+# value *after* processing the |env:| directive here.
 entry_template = """
     - env: TARGET_X=%(target)s %(compilers)s FEATURES_X=%(features)s MODE_X=%(mode)s KCOV=%(kcov)s
       rust: %(rust)s
@@ -177,17 +167,14 @@ def format_entry(os, target, compiler, rust, mode, features):
         sources = []
 
     cc = get_cc(sys, compiler)
-    cxx = replace_cc_with_cxx(sys, compiler)
 
     if os == "osx":
-        os += "\n" + entry_indent + "osx_image: xcode8.2"
+        os += "\n" + entry_indent + "osx_image: xcode9.3"
 
     compilers = []
     if cc != "":
         compilers += ["CC_X=" + cc]
     compilers += ""
-    if cxx != "":
-        compilers += ["CXX_X=" + cxx]
 
     return template % {
             "compilers": " ".join(compilers),
@@ -204,20 +191,16 @@ def format_entry(os, target, compiler, rust, mode, features):
 def get_linux_packages_to_install(target, compiler, arch, kcov):
     if compiler in ["", linux_default_clang]:
         packages = []
-    elif compiler.startswith("clang-"):
+    elif compiler.startswith("clang-") or compiler.startswith("gcc-"):
         packages = [compiler]
-    elif compiler.startswith("gcc-"):
-        packages = [compiler, replace_cc_with_cxx("linux", compiler)]
     else:
         packages = []
 
     if target == "aarch64-unknown-linux-gnu":
         packages += ["gcc-aarch64-linux-gnu",
-                     "g++-aarch64-linux-gnu",
                      "libc6-dev-arm64-cross"]
     if target == "arm-unknown-linux-gnueabihf":
         packages += ["gcc-arm-linux-gnueabihf",
-                     "g++-arm-linux-gnueabihf",
                      "libc6-dev-armhf-cross"]
     if target == "armv7-linux-androideabi":
         packages += ["expect",
@@ -234,11 +217,9 @@ def get_linux_packages_to_install(target, compiler, arch, kcov):
 
         if compiler.startswith("clang-") or compiler == "":
             packages += ["libc6-dev-i386",
-                         "gcc-multilib",
-                         "g++-multilib"]
+                         "gcc-multilib"]
         elif compiler.startswith("gcc-"):
             packages += [compiler + "-multilib",
-                         replace_cc_with_cxx("linux", compiler) + "-multilib",
                          "linux-libc-dev:i386"]
         else:
             raise ValueError("unexpected compiler: %s" % compiler)
@@ -256,13 +237,10 @@ def get_linux_packages_to_install(target, compiler, arch, kcov):
 def get_sources_for_package(package):
     ubuntu_toolchain = "ubuntu-toolchain-r-test"
     if package.startswith("clang-"):
-        if package == latest_clang:
-            llvm_toolchain = "llvm-toolchain-precise"
-        else:
-            _, version = package.split("-")
-            llvm_toolchain = "llvm-toolchain-precise-%s" % version
+        _, version = package.split("-")
+        llvm_toolchain = "llvm-toolchain-trusty-%s" % version
 
-        # Stuff in llvm-toolchain-precise depends on stuff in the toolchain
+        # Stuff in llvm-toolchain-trusty depends on stuff in the toolchain
         # packages.
         return [llvm_toolchain, ubuntu_toolchain]
     else:
@@ -273,11 +251,6 @@ def get_cc(sys, compiler):
         return "clang"
 
     return compiler
-
-def replace_cc_with_cxx(sys, compiler):
-    return get_cc(sys, compiler) \
-               .replace("gcc", "g++") \
-               .replace("clang", "clang++")
 
 def main():
     # Make a backup of the file we are about to update.

@@ -25,6 +25,7 @@ pub static AES_128_GCM: aead::Algorithm = aead::Algorithm {
     seal: aes_gcm_seal,
     open: aes_gcm_open,
     id: aead::AlgorithmID::AES_128_GCM,
+    max_input_len: AES_GCM_MAX_INPUT_LEN,
 };
 
 /// AES-256 in GCM mode with 128-bit tags and 96 bit nonces.
@@ -38,11 +39,12 @@ pub static AES_256_GCM: aead::Algorithm = aead::Algorithm {
     seal: aes_gcm_seal,
     open: aes_gcm_open,
     id: aead::AlgorithmID::AES_256_GCM,
+    max_input_len: AES_GCM_MAX_INPUT_LEN,
 };
 
 fn aes_gcm_init(ctx_buf: &mut [u8], key: &[u8])
                 -> Result<(), error::Unspecified> {
-    bssl::map_result(unsafe {
+    Result::from(unsafe {
         GFp_aes_gcm_init(ctx_buf.as_mut_ptr(), ctx_buf.len(), key.as_ptr(),
                          key.len())
     })
@@ -53,7 +55,7 @@ fn aes_gcm_seal(ctx: &[u64; aead::KEY_CTX_BUF_ELEMS],
                 tag: &mut [u8; aead::TAG_LEN])
                 -> Result<(), error::Unspecified> {
     let ctx = polyfill::slice::u64_as_u8(ctx);
-    bssl::map_result(unsafe {
+    Result::from(unsafe {
         GFp_aes_gcm_seal(ctx.as_ptr(), in_out.as_mut_ptr(), in_out.len(), tag,
                          nonce, ad.as_ptr(), ad.len())
     })
@@ -64,7 +66,7 @@ fn aes_gcm_open(ctx: &[u64; aead::KEY_CTX_BUF_ELEMS],
                 in_out: &mut [u8], tag_out: &mut [u8; aead::TAG_LEN])
                 -> Result<(), error::Unspecified> {
     let ctx = polyfill::slice::u64_as_u8(ctx);
-    bssl::map_result(unsafe {
+    Result::from(unsafe {
         GFp_aes_gcm_open(ctx.as_ptr(), in_out.as_mut_ptr(),
                          in_out.len() - in_prefix_len, tag_out, nonce,
                          in_out[in_prefix_len..].as_ptr(), ad.as_ptr(),
@@ -81,6 +83,10 @@ pub const AES_KEY_CTX_BUF_LEN: usize = AES_KEY_BUF_LEN + GCM128_SERIALIZED_LEN;
 // Keep this in sync with `AES_KEY` in aes.h.
 const AES_KEY_BUF_LEN: usize = (4 * 4 * (AES_MAX_ROUNDS + 1)) + 8;
 
+const AES_BLOCK_LEN: u64 = 16;
+const AES_GCM_OVERHEAD_BLOCKS_PER_NONCE: u64 = 2;
+const AES_GCM_MAX_INPUT_LEN: u64 = max_input_len!(AES_BLOCK_LEN, AES_GCM_OVERHEAD_BLOCKS_PER_NONCE);
+
 // Keep this in sync with `AES_MAXNR` in aes.h.
 const AES_MAX_ROUNDS: usize = 14;
 
@@ -93,25 +99,26 @@ const GCM128_SERIALIZED_LEN: usize = 16 * 16;
 
 extern {
     fn GFp_aes_gcm_init(ctx_buf: *mut u8, ctx_buf_len: c::size_t,
-                        key: *const u8, key_len: c::size_t) -> c::int;
+                        key: *const u8, key_len: c::size_t) -> bssl::Result;
 
     fn GFp_aes_gcm_seal(ctx_buf: *const u8, in_out: *mut u8,
                         in_out_len: c::size_t,
                         tag_out: &mut [u8; aead::TAG_LEN],
                         nonce: &[u8; aead::NONCE_LEN], ad: *const u8,
-                        ad_len: c::size_t) -> c::int;
+                        ad_len: c::size_t) -> bssl::Result;
 
     fn GFp_aes_gcm_open(ctx_buf: *const u8, out: *mut u8,
                         in_out_len: c::size_t,
                         tag_out: &mut [u8; aead::TAG_LEN],
                         nonce: &[u8; aead::NONCE_LEN], in_: *const u8,
-                        ad: *const u8, ad_len: c::size_t) -> c::int;
+                        ad: *const u8, ad_len: c::size_t) -> bssl::Result;
 }
 
 
 #[cfg(test)]
 mod tests {
     use {c, test};
+    use bits::BitLength;
     use super::AES_MAX_ROUNDS;
 
     #[test]
@@ -126,15 +133,16 @@ mod tests {
                 slice_as_array_ref!(&expected_output, AES_BLOCK_SIZE).unwrap();
 
             // Key setup.
+            let key_bits = BitLength::from_usize_bytes(key.len()).unwrap();
+            assert!(key_bits == BitLength(128) || key_bits == BitLength(256));
+            let key_bits = key_bits.as_usize_bits() as c::uint;
             let mut aes_key = AES_KEY {
                 rd_key: [0u32; 4 * (AES_MAX_ROUNDS + 1)],
                 rounds: 0,
             };
-            let res = unsafe {
-                GFp_AES_set_encrypt_key(key.as_ptr(), key.len() * 8,
-                                        &mut aes_key)
-            };
-            assert_eq!(res, 0, "GFp_AES_set_encrypt_key failed.");
+            unsafe {
+                GFp_AES_set_encrypt_key(key.as_ptr(), key_bits, &mut aes_key);
+            }
 
             // Test encryption into a separate buffer.
             let mut output_buf = [0u8; AES_BLOCK_SIZE];
@@ -166,8 +174,23 @@ mod tests {
     }
 
     extern "C" {
-        fn GFp_AES_set_encrypt_key(key: *const u8, bits: usize,
-                                   aes_key: *mut AES_KEY) -> c::int;
+        fn GFp_AES_set_encrypt_key(key: *const u8, bits: c::uint,
+                                   aes_key: *mut AES_KEY);
         fn GFp_AES_encrypt(in_: *const u8, out: *mut u8, key: *const AES_KEY);
+    }
+
+    #[test]
+    fn max_input_len_test() {
+        // [NIST SP800-38D] Section 5.2.1.1. Note that [RFC 5116 Section 5.1] and
+        // [RFC 5116 Section 5.2] have an off-by-one error in `P_MAX`.
+        //
+        // [NIST SP800-38D]:
+        //    http://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-38d.pdf
+        // [RFC 5116 Section 5.1]: https://tools.ietf.org/html/rfc5116#section-5.1
+        // [RFC 5116 Section 5.2]: https://tools.ietf.org/html/rfc5116#section-5.2
+        const NIST_SP800_38D_MAX_BITS: u64 = (1u64 << 39) - 256;
+        assert_eq!(NIST_SP800_38D_MAX_BITS, 549_755_813_632u64);
+        assert_eq!(super::AES_128_GCM.max_input_len * 8, NIST_SP800_38D_MAX_BITS);
+        assert_eq!(super::AES_256_GCM.max_input_len * 8, NIST_SP800_38D_MAX_BITS);
     }
 }

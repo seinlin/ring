@@ -31,16 +31,6 @@ non-public (`mod x`, not `pub mod x`) and the enclosing module must re-export,
 using `pub use submodule::x`, the items that are intended to be public. This
 way, the implementation details that drove the choice to use nested submodules
 do not affect the public API.
-
-Generally the Rust Guidelines for submodules are followed in *ring*. However,
-the Rust Guidelines (and rustc/cargo) require (by default) that when a module
-*x* has submodules, the module must be in a *x*/mod.rs. This would result in
-many files named mod.rs, which would make navigating through the source code
-more difficult and confusing. Instead, use `#[path = "x/x.rs"] pub mod x;` (all
-on one line, which is an exception to the rule that attributes should each be
-on their own line) so that every module's filename is unique. Example:
-```
-#[path = "good_example/good_example.rs"] pub mod good_example;
 ```
 
 Note that this is only necessary when the module has submodules.
@@ -101,29 +91,33 @@ already a safer function for doing the conversion in
 [ring::polyfill](src/polyfill.rs). If not, add one to `ring::polyfill`.
 
 The C code generally uses the C `int` type as a return value, where 1 indicates
-success and 0 indicates failure. Sometimes the C code has functions that return
-pointers, and a NULL pointer indicates failure. The module
-[ring::bssl](src/bssl.rs) contains some utilities for mapping these return
-values to `Result<(), ()>` and `Result<*mut T, ()>`, respectively. They should
-be used as in the following example (note the placement of `unsafe`):
+success and 0 indicates failure. The module [ring::bssl](src/bssl.rs) contains
+a [transparent] `Result` type which should be used as the return type when
+declaring foreign functions which follow this convention. A
+`ring::bssl::Result` should be converted to a `std::result::Result` using the
+pattern in the following example (note the placement of `unsafe`):
+
+[transparent]: https://doc.rust-lang.org/nightly/reference/type-layout.html#the-transparent-representation
+
 ```rust
+extern {
+    unsafe_fn1() -> bssl::Result;
+    /* ... */
+}
+
 fn foo() -> Result<(), ()> {
-    try!(bssl::map_result(unsafe {
+    Result::from(unsafe {
         unsafe_fn2(when, the, entire, thing, does, not, fit, on, a, single,
                    line)
-    }));
+    })?;
 
-    try!(bssl::map_result(unsafe {
+    Result::from(unsafe {
         unsafe_fn1() // Use the same style even when the call fits on one line.
-    }));
-
-    let ptr = try!(bssl::map_ptr_result(unsafe {
-        unsafe_fn_returning_pointer()
-    }));
+    })?;
 
     // The return value of `foo` will be the mapped result of calling
     // `unsafe_fn3`.
-    bssl::map_result(unsafe {
+    Result::from(unsafe {
         unsafe_fn3()
     })
 }
@@ -388,25 +382,36 @@ behavior of the function. Pay special note to success/failure behaviors
 and caller obligations on object lifetimes. If this sacrifices
 conciseness, consider simplifying the function's behavior.
 
-    /* EVP_DigestVerifyUpdate appends |len| bytes from |data| to the data which
-     * will be verified by |EVP_DigestVerifyFinal|. It returns one on success and
-     * zero otherwise. */
+    // EVP_DigestVerifyUpdate appends |len| bytes from |data| to the data which
+    // will be verified by |EVP_DigestVerifyFinal|. It returns one on success and
+    // zero otherwise.
     OPENSSL_EXPORT int EVP_DigestVerifyUpdate(EVP_MD_CTX *ctx, const void *data,
                                               size_t len);
 
 Explicitly mention any surprising edge cases or deviations from common
 return value patterns in legacy functions.
 
-    /* RSA_private_encrypt encrypts |flen| bytes from |from| with the private key in
-     * |rsa| and writes the encrypted data to |to|. The |to| buffer must have at
-     * least |RSA_size| bytes of space. It returns the number of bytes written, or
-     * -1 on error. The |padding| argument must be one of the |RSA_*_PADDING|
-     * values. If in doubt, |RSA_PKCS1_PADDING| is the most common.
-     *
-     * WARNING: this function is dangerous because it breaks the usual return value
-     * convention. Use |RSA_sign_raw| instead. */
+    // RSA_private_encrypt encrypts |flen| bytes from |from| with the private key in
+    // |rsa| and writes the encrypted data to |to|. The |to| buffer must have at
+    // least |RSA_size| bytes of space. It returns the number of bytes written, or
+    // -1 on error. The |padding| argument must be one of the |RSA_*_PADDING|
+    // values. If in doubt, |RSA_PKCS1_PADDING| is the most common.
+    //
+    // WARNING: this function is dangerous because it breaks the usual return value
+    // convention. Use |RSA_sign_raw| instead.
     OPENSSL_EXPORT int RSA_private_encrypt(int flen, const uint8_t *from,
                                            uint8_t *to, RSA *rsa, int padding);
 
 Document private functions in their `internal.h` header or, if static,
 where defined.
+
+
+## Build logic
+
+BoringSSL is used by many projects with many different build tools.
+Reimplementing and maintaining build logic in each downstream build is
+cumbersome, so build logic should be avoided where possible. Platform-specific
+files should be excluded by wrapping the contents in `#ifdef`s, rather than
+computing platform-specific file lists. Generated source files such as perlasm
+and `err_data.c` may be used in the standalone CMake build but, for downstream
+builds, they should be pre-generated in `generate_build_files.py`.

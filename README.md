@@ -72,6 +72,11 @@ target hardware.
 Contributing
 ------------
 
+The most important contributions are *uses* of *ring*. That is, we're very
+interested in seeing useful things built on top of *ring*, like implementations
+of TLS, SSH, the Noise Protocol, etc.
+
+Of course, contributions to *ring*'s code base are highly appreciated too.
 The *ring* project happily accepts pull requests without you needing to sign
 any formal license agreement. The portions of pull requests that modify
 existing files must be licensed under the same terms as the files being
@@ -86,11 +91,8 @@ I agree to license my contributions to each file under the terms given
 at the top of each file I changed.
 ```
 
-The most important contributions are *uses* of *ring*. That is, we're very
-interested in seeing useful things built on top of *ring*, like implementations
-of TLS, SSH, the Noise Protocol, etc.
 
-Of course, contributions to *ring*'s code base are highly appreciated too. If
+If
 you want to work directly on *ring* and you don't have an idea for something to
 contribute already, see these curated lists of open issues:
 
@@ -129,6 +131,77 @@ useful for people hacking on *ring*.
 
 
 
+Versioning & Stability
+----------------------
+
+Users of *ring* should always use the latest released version, and users
+should upgrade to the latest released version as soon as it is released.
+*ring* has a linear release model that favors users of the latest released
+version. We have never backported fixes to earlier releases and we don't
+maintain branches other than the master branch. Further, for some obscure
+technical reasons it's currently not possible to link two different versions
+of *ring* into the same program; for policy reasons we don't bother to try
+to work around that. Thus it is important that libraries using *ring* update
+to the latest version of *ring* ASAP, so that libraries that depend on
+*their* libraries can upgrade to the latest version of *ring*.
+
+*ring* is tested on the latest Stable, Beta, and Nightly releases of Rust.
+We do not spend effort on backward compatibility with older releases of
+Rust; for example, when Rust 1.53 (Stable) is released, we don't care if
+*ring* stops working with Rust 1.52 or earlier versions. Thus, we can
+always use the latest *stable* features of the Rust language in *ring*.
+So far we've never used unstable features of Rust except for the benchmarking
+support (`#[bench]`), and we're hoping to remove even *that* Nightly
+dependency. Sometimes things are broken with Nightly Rust. We prioritize
+keeping things working on Stable; if things break on Beta and Nightly then
+that breakage won't be considered urgent, though it will eventually get
+resolved, one way or another.
+
+We prefer to improve *ring*'s API over keeping *ring*'s API stable. We
+don't keep old APIs around for the sake of backward compatibility; we prefer
+to remove old APIs in the same change that adds new APIs. This makes it
+easier for people to contribute improvements. This means that sometimes
+upgrading to the newest version of *ring* will require some code changes. Over
+time the rate of change in the API will probably slow to the point where it
+will be stable in practice.
+
+We don't have release notes. Instead, we try to clearly document each change
+in each commit. Read the the commit message, the tests, and the patch itself
+for each change. If anything is still unclear, let us know by submitting a pull
+request or by filing an issue in the issue tracker so that we can improve
+things.
+
+This model of development is different than the model a lot of other open
+source libraries use. The idea behind *our* model is to encourage all users to
+work together to ensure that the latest version is good *as it is being
+developed*. In particular, because users know that correctness/security fixes
+(if any) aren't going to get backported, they have a strong incentive to help
+review pull requests before they are merged and/or review commits on the master
+branch after they've landed to ensure that code quality on the master branch
+stays high.
+
+The more common model, where there are stable versions that have important
+security patches backported, lowers people's incentives to actively participate
+in mainline development. Maintaining stable APIs also discourages improving
+API design and internal code quality. Thus that model doesn't seem like a good
+fit for *ring*.
+
+Every six months we have a meeting to revisit this policy. Email
+[brian@briansmith.org](mailto:brian@briansmith.org) if you want to attend
+the next meeting. Please don't file issues regarding this policy.
+
+
+
+Bug Reporting
+-------------
+
+Please report bugs either as pull requests or as issues in [the issue
+tracker](https://github.com/briansmith/ring/issues). *ring* has a
+**full disclosure** vulnerability policy. **Please do NOT attempt to report
+any security vulnerability in this code privately to anybody.**
+
+
+
 Online Automated Testing
 ------------------------
 
@@ -141,7 +214,7 @@ the table below. The C compilers listed are used for compiling the C portions.
 <tr><th>OS</th><th>Arch.</th><th>Compilers</th><th>Status</th>
 <tr><td rowspan=2>Linux</td>
     <td>x86, x86_64</td>
-    <td>GCC 4.6, GCC 5, GCC 6, Clang 3.8</td>
+    <td>GCC 4.8, GCC 7, Clang 5</td>
     <td rowspan=4><a href=https://travis-ci.org/briansmith/ring/branches>Build Status</a></td>
 </tr>
 <tr><td>32&#8209;bit&nbsp;ARM, AAarch64</td>
@@ -155,7 +228,7 @@ the table below. The C compilers listed are used for compiling the C portions.
 </tr>
 <tr><td>Mac&nbsp;OS&nbsp;X</td>
     <td>x64</td>
-    <td>Apple LLVM version 8.0.0 (clang-800.0.42.1) from Xcode 8.2</td>
+    <td>Apple LLVM version 9.0.0 (clang-900.0.39.2) from Xcode 9.3</td>
 </tr>
 <tr><td>Windows</td>
     <td>x86, x86_64</td>
@@ -163,16 +236,6 @@ the table below. The C compilers listed are used for compiling the C portions.
     <td><a href=https://ci.appveyor.com/project/briansmith/ring/branch/master>Build Status</a></td>
 </tr>
 </table>
-
-
-
-Bug Reporting
--------------
-
-Please report bugs either as pull requests or as issues in [the issue
-tracker](https://github.com/briansmith/ring/issues). *ring* has a
-**full disclosure** vulnerability policy. **Please do NOT attempt to report
-any security vulnerability in this code privately to anybody.**
 
 
 

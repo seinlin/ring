@@ -29,7 +29,7 @@ use error;
 
 
 /// A secure random number generator.
-pub trait SecureRandom {
+pub trait SecureRandom: private::Sealed {
     /// Fills `dest` with random bytes.
     fn fill(&self, dest: &mut [u8]) -> Result<(), error::Unspecified>;
 }
@@ -94,6 +94,8 @@ impl SecureRandom for SystemRandom {
     }
 }
 
+impl private::Sealed for SystemRandom {}
+
 #[cfg(not(any(target_os = "linux",
               target_os = "macos",
               target_os = "ios",
@@ -109,6 +111,7 @@ use self::sysrand_or_urandom::fill as fill_impl;
 
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 use self::darwin::fill as fill_impl;
+use private;
 
 #[cfg(target_os = "linux")]
 mod sysrand_chunk {
@@ -147,6 +150,7 @@ mod sysrand_chunk {
     #[link(name = "advapi32")]
     extern "system" {
         #[link_name = "SystemFunction036"]
+        #[must_use]
         fn RtlGenRandom(random_buffer: *mut u8,
                         random_buffer_length: c::win32::ULONG)
                         -> c::win32::BOOLEAN;
@@ -271,6 +275,7 @@ mod darwin {
         static kSecRandomDefault: &'static SecRandomRef;
 
         // For now `rnd` must be `kSecRandomDefault`.
+        #[must_use]
         fn SecRandomCopyBytes(rnd: &'static SecRandomRef, count: c::size_t,
                               bytes: *mut u8) -> c::int;
     }
