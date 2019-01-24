@@ -29,8 +29,7 @@
 //!
 //! [RFC 5869]: https://tools.ietf.org/html/rfc5869
 
-
-use hmac;
+use crate::hmac;
 
 /// Fills `out` with the output of the HKDF Extract-and-Expand operation for
 /// the given inputs.
@@ -51,8 +50,7 @@ use hmac;
 /// # Panics
 ///
 /// `extract_and_expand` panics if `expand` panics.
-pub fn extract_and_expand(salt: &hmac::SigningKey, secret: &[u8],
-                          info: &[u8], out: &mut [u8]) {
+pub fn extract_and_expand(salt: &hmac::SigningKey, secret: &[u8], info: &[u8], out: &mut [u8]) {
     let prk = extract(salt, secret);
     expand(&prk, info, out)
 }

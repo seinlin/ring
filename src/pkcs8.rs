@@ -16,8 +16,8 @@
 //!
 //! [RFC 5958]: https://tools.ietf.org/html/rfc5958.
 
+use crate::{ec, error, io::der};
 use core;
-use {der, ec, error};
 use untrusted;
 
 pub(crate) enum Version {
@@ -49,14 +49,10 @@ pub(crate) struct Template {
 
 impl Template {
     #[inline]
-    fn alg_id_value(&self) -> &[u8] {
-        &self.bytes[self.alg_id_range.start..self.alg_id_range.end]
-    }
+    fn alg_id_value(&self) -> &[u8] { &self.bytes[self.alg_id_range.start..self.alg_id_range.end] }
 
     #[inline]
-    pub fn curve_oid(&self) -> &[u8] {
-        &self.alg_id_value()[self.curve_id_index..]
-    }
+    pub fn curve_oid(&self) -> &[u8] { &self.alg_id_value()[self.curve_id_index..] }
 }
 
 /// Parses an unencrypted PKCS#8 private key, verifies that it is the right type
@@ -65,10 +61,9 @@ impl Template {
 /// PKCS#8 is specified in [RFC 5958].
 ///
 /// [RFC 5958]: https://tools.ietf.org/html/rfc5958.
-pub(crate) fn unwrap_key<'a>(template: &Template, version: Version,
-                      input: untrusted::Input<'a>)
-        -> Result<(untrusted::Input<'a>, Option<untrusted::Input<'a>>),
-                   error::Unspecified> {
+pub(crate) fn unwrap_key<'a>(
+    template: &Template, version: Version, input: untrusted::Input<'a>,
+) -> Result<(untrusted::Input<'a>, Option<untrusted::Input<'a>>), error::KeyRejected> {
     unwrap_key_(template.alg_id_value(), version, input)
 }
 
@@ -83,48 +78,74 @@ pub(crate) fn unwrap_key<'a>(template: &Template, version: Version,
 ///
 /// [RFC 5958]: https://tools.ietf.org/html/rfc5958.
 pub(crate) fn unwrap_key_<'a>(
-    alg_id: &[u8], version: Version, input: untrusted::Input<'a>)
-    -> Result<(untrusted::Input<'a>, Option<untrusted::Input<'a>>),
-              error::Unspecified> {
-    input.read_all(error::Unspecified, |input| {
-        der::nested(input, der::Tag::Sequence, error::Unspecified, |input| {
-            // Currently we only support algorithms that should only be encoded
-            // in v1 form, so reject v2 and any later form.
-            let require_public_key =
-                    match (der::small_nonnegative_integer(input)?, version) {
-                (0, Version::V1Only) => false,
-                (0, Version::V1OrV2) => false,
-                (1, Version::V1OrV2) |
-                (1, Version::V2Only) => true,
-                _ => { return Err(error::Unspecified); }
-            };
-
-            let actual_alg_id =
-                der::expect_tag_and_get_value(input, der::Tag::Sequence)?;
-            if actual_alg_id != alg_id {
-                return Err(error::Unspecified);
-            }
-
-            let private_key =
-                der::expect_tag_and_get_value(input, der::Tag::OctetString)?;
-
-            // Ignore any attributes that are present.
-            if input.peek(der::Tag::ContextSpecificConstructed0 as u8) {
-                let _ = der::expect_tag_and_get_value(input,
-                    der::Tag::ContextSpecificConstructed0)?;
-            }
-
-            let public_key = if require_public_key {
-                Some(der::nested(
-                    input, der::Tag::ContextSpecificConstructed1,
-                    error::Unspecified, der::bit_string_with_no_unused_bits)?)
-            } else {
-                None
-            };
-
-            Ok((private_key, public_key))
-        })
+    alg_id: &[u8], version: Version, input: untrusted::Input<'a>,
+) -> Result<(untrusted::Input<'a>, Option<untrusted::Input<'a>>), error::KeyRejected> {
+    input.read_all(error::KeyRejected::invalid_encoding(), |input| {
+        der::nested(
+            input,
+            der::Tag::Sequence,
+            error::KeyRejected::invalid_encoding(),
+            |input| unwrap_key__(alg_id, version, input),
+        )
     })
+}
+
+fn unwrap_key__<'a>(
+    alg_id: &[u8], version: Version, input: &mut untrusted::Reader<'a>,
+) -> Result<(untrusted::Input<'a>, Option<untrusted::Input<'a>>), error::KeyRejected> {
+    let actual_version = der::small_nonnegative_integer(input)
+        .map_err(|error::Unspecified| error::KeyRejected::invalid_encoding())?;
+
+    // Do things in a specific order to return more useful errors:
+    // 1. Check for completely unsupported version.
+    // 2. Check for algorithm mismatch.
+    // 3. Check for algorithm-specific version mismatch.
+
+    if actual_version > 1 {
+        return Err(error::KeyRejected::version_not_supported());
+    };
+
+    let actual_alg_id = der::expect_tag_and_get_value(input, der::Tag::Sequence)
+        .map_err(|error::Unspecified| error::KeyRejected::invalid_encoding())?;
+    if actual_alg_id != alg_id {
+        return Err(error::KeyRejected::wrong_algorithm());
+    }
+
+    let require_public_key = match (actual_version, version) {
+        (0, Version::V1Only) => false,
+        (0, Version::V1OrV2) => false,
+        (1, Version::V1OrV2) | (1, Version::V2Only) => true,
+        _ => {
+            return Err(error::KeyRejected::version_not_supported());
+        },
+    };
+
+    let private_key = der::expect_tag_and_get_value(input, der::Tag::OctetString)
+        .map_err(|error::Unspecified| error::KeyRejected::invalid_encoding())?;
+
+    // Ignore any attributes that are present.
+    if input.peek(der::Tag::ContextSpecificConstructed0 as u8) {
+        let _ = der::expect_tag_and_get_value(input, der::Tag::ContextSpecificConstructed0)
+            .map_err(|error::Unspecified| error::KeyRejected::invalid_encoding())?;
+    }
+
+    let public_key = if require_public_key {
+        if input.at_end() {
+            return Err(error::KeyRejected::public_key_is_missing());
+        }
+        let public_key = der::nested(
+            input,
+            der::Tag::ContextSpecificConstructed1,
+            error::Unspecified,
+            der::bit_string_with_no_unused_bits,
+        )
+        .map_err(|error::Unspecified| error::KeyRejected::invalid_encoding())?;
+        Some(public_key)
+    } else {
+        None
+    };
+
+    Ok((private_key, public_key))
 }
 
 /// A generated PKCS#8 document.
@@ -138,29 +159,29 @@ impl AsRef<[u8]> for Document {
     fn as_ref(&self) -> &[u8] { &self.bytes[..self.len] }
 }
 
-pub(crate) fn wrap_key(template: &Template, private_key: &[u8],
-                       public_key: &[u8]) -> Document {
+pub(crate) fn wrap_key(template: &Template, private_key: &[u8], public_key: &[u8]) -> Document {
     let mut result = Document {
         bytes: [0; ec::PKCS8_DOCUMENT_MAX_LEN],
         len: template.bytes.len() + private_key.len() + public_key.len(),
     };
-    wrap_key_(template, private_key, public_key, &mut result.bytes[..result.len]);
+    wrap_key_(
+        template,
+        private_key,
+        public_key,
+        &mut result.bytes[..result.len],
+    );
     result
 }
 
 /// Formats a private key "prefix||private_key||middle||public_key" where
 /// `template` is "prefix||middle" split at position `private_key_index`.
-pub(crate) fn wrap_key_(template: &Template, private_key: &[u8],
-                        public_key: &[u8], bytes: &mut [u8]) {
+fn wrap_key_(template: &Template, private_key: &[u8], public_key: &[u8], bytes: &mut [u8]) {
     let (before_private_key, after_private_key) =
         template.bytes.split_at(template.private_key_index);
     let private_key_end_index = template.private_key_index + private_key.len();
     bytes[..template.private_key_index].copy_from_slice(before_private_key);
-    bytes[template.private_key_index..private_key_end_index]
-        .copy_from_slice(&private_key);
-    bytes[private_key_end_index..
-          (private_key_end_index + after_private_key.len())]
+    bytes[template.private_key_index..private_key_end_index].copy_from_slice(&private_key);
+    bytes[private_key_end_index..(private_key_end_index + after_private_key.len())]
         .copy_from_slice(after_private_key);
-    bytes[(private_key_end_index + after_private_key.len())..]
-        .copy_from_slice(public_key);
+    bytes[(private_key_end_index + after_private_key.len())..].copy_from_slice(public_key);
 }

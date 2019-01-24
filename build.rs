@@ -14,10 +14,7 @@
 
 //! Build the non-Rust components.
 
-#![deny(
-    box_pointers,
-)]
-
+#![deny(box_pointers)]
 #![forbid(
     anonymous_parameters,
     legacy_directory_ownership,
@@ -33,35 +30,32 @@
     unused_qualifications,
     unused_results,
     variant_size_differences,
-    warnings,
+    warnings
 )]
-
-extern crate cc;
 
 // In the `pregenerate_asm_main()` case we don't want to access (Cargo)
 // environment variables at all, so avoid `use std::env` here.
 
-use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::fs::{self, DirEntry};
-use std::time::SystemTime;
+use std::{
+    fs::{self, DirEntry},
+    path::{Path, PathBuf},
+    process::Command,
+    time::SystemTime,
+};
 
-const X86: &'static str = "x86";
-const X86_64: &'static str = "x86_64";
-const AARCH64: &'static str = "aarch64";
-const ARM: &'static str = "arm";
-const NEVER: &'static str = "Don't ever build this file.";
+const X86: &str = "x86";
+const X86_64: &str = "x86_64";
+const AARCH64: &str = "aarch64";
+const ARM: &str = "arm";
+const NEVER: &str = "Don't ever build this file.";
 
 #[cfg_attr(rustfmt, rustfmt_skip)]
-const RING_SRCS: &'static [(&'static [&'static str], &'static str)] = &[
-    (&[], "crypto/fipsmodule/aes/aes.c"),
-    (&[], "crypto/fipsmodule/bn/exponentiation.c"),
+const RING_SRCS: &[(&[&str], &str)] = &[
+    (&[], "crypto/block.c"),
     (&[], "crypto/fipsmodule/bn/generic.c"),
     (&[], "crypto/fipsmodule/bn/montgomery.c"),
     (&[], "crypto/fipsmodule/bn/montgomery_inv.c"),
-    (&[], "crypto/fipsmodule/bn/shift.c"),
     (&[], "crypto/fipsmodule/cipher/e_aes.c"),
-    (&[NEVER], "crypto/cipher_extra/e_aesgcmsiv.c"),
     (&[], "crypto/crypto.c"),
     (&[], "crypto/fipsmodule/ec/ecp_nistz.c"),
     (&[], "crypto/fipsmodule/ec/ecp_nistz256.c"),
@@ -70,7 +64,6 @@ const RING_SRCS: &'static [(&'static [&'static str], &'static str)] = &[
     (&[], "crypto/limbs/limbs.c"),
     (&[], "crypto/mem.c"),
     (&[], "crypto/fipsmodule/modes/gcm.c"),
-    (&[NEVER], "crypto/fipsmodule/modes/polyval.c"),
     (&[], "third_party/fiat/curve25519.c"),
 
     (&[X86_64, X86], "crypto/cpu-intel.c"),
@@ -94,6 +87,7 @@ const RING_SRCS: &'static [(&'static [&'static str], &'static str)] = &[
     (&[X86_64], "crypto/chacha/asm/chacha-x86_64.pl"),
     (&[NEVER], "crypto/cipher_extra/asm/aes128gcmsiv-x86_64.pl"),
     (&[X86_64], "crypto/fipsmodule/ec/asm/p256-x86_64-asm.pl"),
+    (&[NEVER], "crypto/fipsmodule/ec/asm/p256_beeu-x86_64-asm.pl"),
     (&[X86_64], "crypto/fipsmodule/modes/asm/aesni-gcm-x86_64.pl"),
     (&[X86_64], "crypto/fipsmodule/modes/asm/ghash-x86_64.pl"),
     (&[X86_64], "crypto/poly1305/asm/poly1305-x86_64.pl"),
@@ -115,6 +109,7 @@ const RING_SRCS: &'static [(&'static [&'static str], &'static str)] = &[
     (&[ARM], "crypto/fipsmodule/sha/asm/sha256-armv4.pl"),
     (&[ARM], "crypto/fipsmodule/sha/asm/sha512-armv4.pl"),
 
+    (&[AARCH64], "crypto/fipsmodule/aes/aes.c"),
     (&[AARCH64], "crypto/fipsmodule/bn/asm/armv8-mont.pl"),
     (&[AARCH64], "crypto/cpu-aarch64-linux.c"),
     (&[AARCH64], "crypto/chacha/asm/chacha-armv8.pl"),
@@ -123,26 +118,24 @@ const RING_SRCS: &'static [(&'static [&'static str], &'static str)] = &[
     (&[AARCH64], SHA512_ARMV8),
 ];
 
-const SHA256_X86_64: &'static str = "crypto/fipsmodule/sha/asm/sha256-x86_64.pl";
-const SHA512_X86_64: &'static str = "crypto/fipsmodule/sha/asm/sha512-x86_64.pl";
+const SHA256_X86_64: &str = "crypto/fipsmodule/sha/asm/sha256-x86_64.pl";
+const SHA512_X86_64: &str = "crypto/fipsmodule/sha/asm/sha512-x86_64.pl";
 
-const SHA256_ARMV8: &'static str = "crypto/fipsmodule/sha/asm/sha256-armv8.pl";
-const SHA512_ARMV8: &'static str = "crypto/fipsmodule/sha/asm/sha512-armv8.pl";
+const SHA256_ARMV8: &str = "crypto/fipsmodule/sha/asm/sha256-armv8.pl";
+const SHA512_ARMV8: &str = "crypto/fipsmodule/sha/asm/sha512-armv8.pl";
 
-const RING_TEST_SRCS: &'static [&'static str] = &[
-    ("crypto/constant_time_test.c"),
-];
+const RING_TEST_SRCS: &[&str] = &[("crypto/constant_time_test.c")];
 
 #[cfg_attr(rustfmt, rustfmt_skip)]
-const RING_INCLUDES: &'static [&'static str] =
+const RING_INCLUDES: &[&str] =
     &["crypto/fipsmodule/aes/internal.h",
       "crypto/fipsmodule/bn/internal.h",
-      "crypto/fipsmodule/cipher/internal.h",
       "crypto/fipsmodule/ec/ecp_nistz256_table.inl",
       "crypto/fipsmodule/ec/ecp_nistz384.inl",
       "crypto/fipsmodule/ec/ecp_nistz.h",
       "crypto/fipsmodule/ec/ecp_nistz384.h",
       "crypto/fipsmodule/ec/ecp_nistz256.h",
+      "crypto/block.h",
       "crypto/internal.h",
       "crypto/limbs/limbs.h",
       "crypto/limbs/limbs.inl",
@@ -158,25 +151,25 @@ const RING_INCLUDES: &'static [&'static str] =
     ];
 
 #[cfg_attr(rustfmt, rustfmt_skip)]
-const RING_PERL_INCLUDES: &'static [&'static str] =
+const RING_PERL_INCLUDES: &[&str] =
     &["crypto/perlasm/arm-xlate.pl",
       "crypto/perlasm/x86gas.pl",
       "crypto/perlasm/x86nasm.pl",
       "crypto/perlasm/x86asm.pl",
       "crypto/perlasm/x86_64-xlate.pl"];
 
-const RING_BUILD_FILE: &'static [&'static str] = &["build.rs"];
+const RING_BUILD_FILE: &[&str] = &["build.rs"];
 
 const PREGENERATED: &'static str = "pregenerated";
 
 fn c_flags(target: &Target) -> &'static [&'static str] {
     if target.env != MSVC {
-        static NON_MSVC_FLAGS: &'static [&'static str] = &[
+        static NON_MSVC_FLAGS: &[&str] = &[
             "-std=c1x", // GCC 4.6 requires "c1x" instead of "c11"
             "-Wbad-function-cast",
             "-Wmissing-prototypes",
             "-Wnested-externs",
-            "-Wstrict-prototypes"
+            "-Wstrict-prototypes",
         ];
         NON_MSVC_FLAGS
     } else {
@@ -186,13 +179,14 @@ fn c_flags(target: &Target) -> &'static [&'static str] {
 
 fn cpp_flags(target: &Target) -> &'static [&'static str] {
     if target.env != MSVC {
-        static NON_MSVC_FLAGS: &'static [&'static str] = &[
+        static NON_MSVC_FLAGS: &[&str] = &[
             // "-pedantic",
             // "-pedantic-errors",
             "-Wall",
             "-Wextra",
             "-Wcast-align",
             "-Wcast-qual",
+            "-Wconversion",
             "-Wenum-compare",
             "-Wfloat-equal",
             "-Wformat=2",
@@ -209,22 +203,18 @@ fn cpp_flags(target: &Target) -> &'static [&'static str] {
             "-Wwrite-strings",
             "-fno-strict-aliasing",
             "-fvisibility=hidden",
-            "-Wno-cast-align"
         ];
         NON_MSVC_FLAGS
     } else {
-        static MSVC_FLAGS: &'static [&'static str] = &[
-            "/GS", // Buffer security checks.
-            "/Gy", // Enable function-level linking.
-
+        static MSVC_FLAGS: &[&str] = &[
+            "/GS",   // Buffer security checks.
+            "/Gy",   // Enable function-level linking.
             "/EHsc", // C++ exceptions only, only in C++.
-            "/GR-", // Disable RTTI.
-
+            "/GR-",  // Disable RTTI.
             "/Zc:wchar_t",
             "/Zc:forScope",
             "/Zc:inline",
             "/Zc:rvalueCast",
-
             // Warnings.
             "/sdl",
             "/Wall",
@@ -234,19 +224,18 @@ fn cpp_flags(target: &Target) -> &'static [&'static str] {
             "/wd4710", // C4710: function not inlined
             "/wd4711", // C4711: function 'function' selected for inline expansion
             "/wd4820", // C4820: <struct>: <n> bytes padding added after <name>
-			"/wd5045", // C5045: Compiler will insert Spectre mitigation for memory load if /Qspectre switch specified
+            "/wd5045", /* C5045: Compiler will insert Spectre mitigation for memory load if
+                        * /Qspectre switch specified */
         ];
         MSVC_FLAGS
     }
 }
 
-const LD_FLAGS: &'static [&'static str] = &[];
+const LD_FLAGS: &[&str] = &[];
 
 // None means "any OS" or "any target". The first match in sequence order is
 // taken.
-const ASM_TARGETS:
-    &'static [(&'static str, Option<&'static str>, &'static str)] =
-&[
+const ASM_TARGETS: &[(&str, Option<&str>, &str)] = &[
     ("x86_64", Some("ios"), "macosx"),
     ("x86_64", Some("macos"), "macosx"),
     ("x86_64", Some(WINDOWS), "nasm"),
@@ -264,7 +253,6 @@ const WINDOWS: &'static str = "windows";
 const MSVC: &'static str = "msvc";
 const MSVC_OBJ_OPT: &'static str = "/Fo";
 const MSVC_OBJ_EXT: &'static str = "obj";
-
 
 fn main() {
     if let Ok(package_name) = std::env::var("CARGO_PKG_NAME") {
@@ -297,10 +285,15 @@ fn ring_build_rs_main() {
     };
 
     let is_debug = env::var("DEBUG").unwrap() != "false";
-    let target = Target { arch, os, env, obj_ext, obj_opt, is_debug };
-    let pregenerated =
-        PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap())
-            .join(PREGENERATED);
+    let target = Target {
+        arch,
+        os,
+        env,
+        obj_ext,
+        obj_opt,
+        is_debug,
+    };
+    let pregenerated = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap()).join(PREGENERATED);
 
     build_c_code(&target, pregenerated, &out_dir);
     check_all_files_tracked()
@@ -322,8 +315,7 @@ fn pregenerate_asm_main() {
             &pregenerated
         };
 
-        let perlasm_src_dsts =
-            perlasm_src_dsts(&asm_dir, target_arch, target_os, perlasm_format);
+        let perlasm_src_dsts = perlasm_src_dsts(&asm_dir, target_arch, target_os, perlasm_format);
         perlasm(&perlasm_src_dsts, target_arch, perlasm_format, None);
 
         if target_os == Some(WINDOWS) {
@@ -331,8 +323,7 @@ fn pregenerate_asm_main() {
             let srcs = asm_srcs(perlasm_src_dsts);
             for src in srcs {
                 let src_path = PathBuf::from(src);
-                let obj_path =
-                    obj_path(&pregenerated, &src_path, MSVC_OBJ_EXT);
+                let obj_path = obj_path(&pregenerated, &src_path, MSVC_OBJ_EXT);
                 run_command(yasm(&src_path, target_arch, &obj_path));
             }
         }
@@ -356,15 +347,18 @@ impl Target {
 }
 
 fn build_c_code(target: &Target, pregenerated: PathBuf, out_dir: &Path) {
-    let includes_modified = RING_INCLUDES.iter()
+    let includes_modified = RING_INCLUDES
+        .iter()
         .chain(RING_BUILD_FILE.iter())
         .chain(RING_PERL_INCLUDES.iter())
         .map(|f| file_modified(Path::new(*f)))
         .max()
         .unwrap();
 
-    fn is_none_or_equals<T>(opt: Option<T>, other: T)
-                            -> bool where T: PartialEq {
+    fn is_none_or_equals<T>(opt: Option<T>, other: T) -> bool
+    where
+        T: PartialEq,
+    {
         if let Some(value) = opt {
             value == other
         } else {
@@ -372,25 +366,35 @@ fn build_c_code(target: &Target, pregenerated: PathBuf, out_dir: &Path) {
         }
     }
 
-    let (_, _, perlasm_format) = ASM_TARGETS.iter().find(|entry| {
-        let &(entry_arch, entry_os, _) = *entry;
-        entry_arch == target.arch() && is_none_or_equals(entry_os, target.os())
-    }).unwrap();
+    let (_, _, perlasm_format) = ASM_TARGETS
+        .iter()
+        .find(|entry| {
+            let &(entry_arch, entry_os, _) = *entry;
+            entry_arch == target.arch() && is_none_or_equals(entry_os, target.os())
+        })
+        .unwrap();
 
     let is_git = std::fs::metadata(".git").is_ok();
 
     let use_pregenerated = !is_git;
     let warnings_are_errors = is_git;
 
-    let asm_dir = if use_pregenerated { &pregenerated } else { out_dir };
+    let asm_dir = if use_pregenerated {
+        &pregenerated
+    } else {
+        out_dir
+    };
 
     let perlasm_src_dsts =
-        perlasm_src_dsts(asm_dir, target.arch(), Some(target.os()),
-                         perlasm_format);
+        perlasm_src_dsts(asm_dir, target.arch(), Some(target.os()), perlasm_format);
 
     if !use_pregenerated {
-        perlasm(&perlasm_src_dsts[..], target.arch(), perlasm_format,
-                Some(includes_modified));
+        perlasm(
+            &perlasm_src_dsts[..],
+            target.arch(),
+            perlasm_format,
+            Some(includes_modified),
+        );
     }
 
     let mut asm_srcs = asm_srcs(perlasm_src_dsts);
@@ -401,18 +405,18 @@ fn build_c_code(target: &Target, pregenerated: PathBuf, out_dir: &Path) {
     if use_pregenerated && target.os() == WINDOWS {
         // The pregenerated object files always use ".obj" as the extension,
         // even when the C/C++ compiler outputs files with the ".o" extension.
-        asm_srcs = asm_srcs.iter()
+        asm_srcs = asm_srcs
+            .iter()
             .map(|src| obj_path(&pregenerated, src.as_path(), "obj"))
             .collect::<Vec<_>>();
     }
 
-    let core_srcs = sources_for_arch(target.arch()).into_iter()
+    let core_srcs = sources_for_arch(target.arch())
+        .into_iter()
         .filter(|p| !is_perlasm(&p))
         .collect::<Vec<_>>();
 
-    let test_srcs = RING_TEST_SRCS.iter()
-        .map(PathBuf::from)
-        .collect::<Vec<_>>();
+    let test_srcs = RING_TEST_SRCS.iter().map(PathBuf::from).collect::<Vec<_>>();
 
     let libs = [
         ("ring-core", &core_srcs[..], &asm_srcs[..]),
@@ -422,34 +426,45 @@ fn build_c_code(target: &Target, pregenerated: PathBuf, out_dir: &Path) {
     // XXX: Ideally, ring-test would only be built for `cargo test`, but Cargo
     // can't do that yet.
     libs.into_iter()
-        .for_each(|&(lib_name, srcs, additional_srcs)|
-            build_library(&target, &out_dir, lib_name, srcs, additional_srcs,
-                          warnings_are_errors, includes_modified));
+        .for_each(|&(lib_name, srcs, additional_srcs)| {
+            build_library(
+                &target,
+                &out_dir,
+                lib_name,
+                srcs,
+                additional_srcs,
+                warnings_are_errors,
+                includes_modified,
+            )
+        });
 
-    println!("cargo:rustc-link-search=native={}",
-             out_dir.to_str().expect("Invalid path"));
+    println!(
+        "cargo:rustc-link-search=native={}",
+        out_dir.to_str().expect("Invalid path")
+    );
 }
 
-
-fn build_library(target: &Target, out_dir: &Path, lib_name: &str,
-                 srcs: &[PathBuf], additional_srcs: &[PathBuf],
-                 warnings_are_errors: bool, includes_modified: SystemTime) {
+fn build_library(
+    target: &Target, out_dir: &Path, lib_name: &str, srcs: &[PathBuf], additional_srcs: &[PathBuf],
+    warnings_are_errors: bool, includes_modified: SystemTime,
+) {
     // Compile all the (dirty) source files into object files.
     #[allow(box_pointers)] // XXX
-    let objs = additional_srcs.into_iter().chain(srcs.into_iter())
-        .filter(|f|
-            target.env() != "msvc" ||
-                f.extension().unwrap().to_str().unwrap() != "S")
-        .map(|f| compile(f, target, warnings_are_errors, out_dir,
-                         includes_modified))
+    let objs = additional_srcs
+        .into_iter()
+        .chain(srcs.into_iter())
+        .filter(|f| target.env() != "msvc" || f.extension().unwrap().to_str().unwrap() != "S")
+        .map(|f| compile(f, target, warnings_are_errors, out_dir, includes_modified))
         .collect::<Vec<_>>();
 
     // Rebuild the library if necessary.
     let lib_path = PathBuf::from(out_dir).join(format!("lib{}.a", lib_name));
 
-    if objs.iter()
+    if objs
+        .iter()
         .map(Path::new)
-        .any(|p| need_run(&p, &lib_path, includes_modified)) {
+        .any(|p| need_run(&p, &lib_path, includes_modified))
+    {
         let mut c = cc::Build::new();
 
         for f in LD_FLAGS {
@@ -471,9 +486,12 @@ fn build_library(target: &Target, out_dir: &Path, lib_name: &str,
         // Handled below.
         let _ = c.cargo_metadata(false);
 
-        c.compile(lib_path.file_name()
-            .and_then(|f| f.to_str())
-            .expect("No filename"));
+        c.compile(
+            lib_path
+                .file_name()
+                .and_then(|f| f.to_str())
+                .expect("No filename"),
+        );
     }
 
     // Link the library. This works even when the library doesn't need to be
@@ -481,8 +499,10 @@ fn build_library(target: &Target, out_dir: &Path, lib_name: &str,
     println!("cargo:rustc-link-lib=static={}", lib_name);
 }
 
-fn compile(p: &Path, target: &Target, warnings_are_errors: bool, out_dir: &Path,
-           includes_modified: SystemTime) -> String {
+fn compile(
+    p: &Path, target: &Target, warnings_are_errors: bool, out_dir: &Path,
+    includes_modified: SystemTime,
+) -> String {
     let ext = p.extension().unwrap().to_str().unwrap();
     if ext == "obj" {
         p.to_str().expect("Invalid path").into()
@@ -508,34 +528,35 @@ fn obj_path(out_dir: &Path, src: &Path, obj_ext: &str) -> PathBuf {
     out_path
 }
 
-fn cc(file: &Path, ext: &str, target: &Target, warnings_are_errors: bool,
-      out_dir: &Path)
-      -> Command {
+fn cc(
+    file: &Path, ext: &str, target: &Target, warnings_are_errors: bool, out_dir: &Path,
+) -> Command {
     let mut c = cc::Build::new();
     let _ = c.include("include");
     match ext {
-        "c" => {
+        "c" =>
             for f in c_flags(target) {
                 let _ = c.flag(f);
-            }
-        },
-        "S" => {},
+            },
+        "S" => (),
         e => panic!("Unsupported file extension: {:?}", e),
     };
     for f in cpp_flags(target) {
         let _ = c.flag(&f);
     }
-    if target.os() != "none" &&
-        target.os() != "redox" &&
-        target.os() != "windows" {
+    if target.os() != "none" && target.os() != "redox" && target.os() != "windows" {
         let _ = c.flag("-fstack-protector");
     }
 
     match (target.os(), target.env()) {
         // ``-gfull`` is required for Darwin's |-dead_strip|.
-        ("macos", _) => { let _ = c.flag("-gfull"); },
-        (_, "msvc") => {},
-        _ => { let _ = c.flag("-g3"); },
+        ("macos", _) => {
+            let _ = c.flag("-gfull");
+        },
+        (_, "msvc") => (),
+        _ => {
+            let _ = c.flag("-g3");
+        },
     };
     if !target.is_debug() {
         let _ = c.define("NDEBUG", None);
@@ -544,7 +565,7 @@ fn cc(file: &Path, ext: &str, target: &Target, warnings_are_errors: bool,
     if target.env() == "msvc" {
         if std::env::var("OPT_LEVEL").unwrap() == "0" {
             let _ = c.flag("/Od"); // Disable optimization for debug builds.
-            // run-time checking: (s)tack frame, (u)ninitialized variables
+                                   // run-time checking: (s)tack frame, (u)ninitialized variables
             let _ = c.flag("/RTCsu");
         } else {
             let _ = c.flag("/Ox"); // Enable full optimization.
@@ -573,10 +594,14 @@ fn cc(file: &Path, ext: &str, target: &Target, warnings_are_errors: bool,
     }
 
     let mut c = c.get_compiler().to_command();
-    let _ = c.arg("-c")
-             .arg(format!("{}{}", target.obj_opt,
-                          out_dir.to_str().expect("Invalid path")))
-             .arg(file);
+    let _ = c
+        .arg("-c")
+        .arg(format!(
+            "{}{}",
+            target.obj_opt,
+            out_dir.to_str().expect("Invalid path")
+        ))
+        .arg(file);
     c
 }
 
@@ -587,17 +612,21 @@ fn yasm(file: &Path, arch: &str, out_file: &Path) -> Command {
         _ => panic!("unsupported arch: {}", arch),
     };
     let mut c = Command::new("yasm.exe");
-    let _ = c.arg("-X").arg("vc")
-             .arg("--dformat=cv8")
-             .arg(oformat)
-             .arg(machine)
-             .arg("-o").arg(out_file.to_str().expect("Invalid path"))
-             .arg(file);
+    let _ = c
+        .arg("-X")
+        .arg("vc")
+        .arg("--dformat=cv8")
+        .arg(oformat)
+        .arg(machine)
+        .arg("-o")
+        .arg(out_file.to_str().expect("Invalid path"))
+        .arg(file);
     c
 }
 
 fn run_command_with_args<S>(command_name: S, args: &[String])
-    where S: AsRef<std::ffi::OsStr> + Copy
+where
+    S: AsRef<std::ffi::OsStr> + Copy,
 {
     let mut cmd = Command::new(command_name);
     let _ = cmd.args(args);
@@ -615,30 +644,35 @@ fn run_command(mut cmd: Command) {
 }
 
 fn sources_for_arch(arch: &str) -> Vec<PathBuf> {
-    RING_SRCS.iter()
+    RING_SRCS
+        .iter()
         .filter(|&&(archs, _)| archs.is_empty() || archs.contains(&arch))
         .map(|&(_, p)| PathBuf::from(p))
         .collect::<Vec<_>>()
 }
 
-fn perlasm_src_dsts(out_dir: &Path, arch: &str, os: Option<&str>,
-                    perlasm_format: &str) -> Vec<(PathBuf, PathBuf)> {
+fn perlasm_src_dsts(
+    out_dir: &Path, arch: &str, os: Option<&str>, perlasm_format: &str,
+) -> Vec<(PathBuf, PathBuf)> {
     let srcs = sources_for_arch(arch);
-    let mut src_dsts = srcs.iter()
+    let mut src_dsts = srcs
+        .iter()
         .filter(|p| is_perlasm(p))
         .map(|src| (src.clone(), asm_path(out_dir, src, os, perlasm_format)))
         .collect::<Vec<_>>();
 
     // Some PerlAsm source files need to be run multiple times with different
     // output paths.
-    { // Appease the borrow checker.
+    {
+        // Appease the borrow checker.
         let mut maybe_synthesize = |concrete, synthesized| {
             let concrete_path = PathBuf::from(concrete);
             if srcs.contains(&concrete_path) {
                 let synthesized_path = PathBuf::from(synthesized);
-                src_dsts.push((concrete_path,
-                               asm_path(out_dir, &synthesized_path, os,
-                                        perlasm_format)))
+                src_dsts.push((
+                    concrete_path,
+                    asm_path(out_dir, &synthesized_path, os, perlasm_format),
+                ))
             }
         };
         maybe_synthesize(SHA512_X86_64, SHA256_X86_64);
@@ -649,28 +683,27 @@ fn perlasm_src_dsts(out_dir: &Path, arch: &str, os: Option<&str>,
 }
 
 fn asm_srcs(perlasm_src_dsts: Vec<(PathBuf, PathBuf)>) -> Vec<PathBuf> {
-    perlasm_src_dsts.into_iter()
+    perlasm_src_dsts
+        .into_iter()
         .map(|(_src, dst)| dst)
         .collect::<Vec<_>>()
 }
 
-fn is_perlasm(path: &PathBuf) -> bool {
-    path.extension().unwrap().to_str().unwrap() == "pl"
-}
+fn is_perlasm(path: &PathBuf) -> bool { path.extension().unwrap().to_str().unwrap() == "pl" }
 
-fn asm_path(out_dir: &Path, src: &Path, os: Option<&str>, perlasm_format: &str)
-            -> PathBuf {
+fn asm_path(out_dir: &Path, src: &Path, os: Option<&str>, perlasm_format: &str) -> PathBuf {
     let src_stem = src.file_stem().expect("source file without basename");
 
     let dst_stem = src_stem.to_str().unwrap();
     let dst_extension = if os == Some("windows") { "asm" } else { "S" };
-    let dst_filename =
-        format!("{}-{}.{}", dst_stem, perlasm_format, dst_extension);
+    let dst_filename = format!("{}-{}.{}", dst_stem, perlasm_format, dst_extension);
     out_dir.join(dst_filename)
 }
 
-fn perlasm(src_dst: &[(PathBuf, PathBuf)], arch: &str,
-           perlasm_format: &str, includes_modified: Option<SystemTime>) {
+fn perlasm(
+    src_dst: &[(PathBuf, PathBuf)], arch: &str, perlasm_format: &str,
+    includes_modified: Option<SystemTime>,
+) {
     for (src, dst) in src_dst {
         if let Some(includes_modified) = includes_modified {
             if !need_run(src, dst, includes_modified) {
@@ -687,15 +720,16 @@ fn perlasm(src_dst: &[(PathBuf, PathBuf)], arch: &str,
         }
         // Work around PerlAsm issue for ARM and AAarch64 targets by replacing
         // back slashes with forward slashes.
-        let dst =
-            dst.to_str().expect("Could not convert path").replace("\\", "/");
+        let dst = dst
+            .to_str()
+            .expect("Could not convert path")
+            .replace("\\", "/");
         args.push(dst);
         run_command_with_args(&get_command("PERL_EXECUTABLE", "perl"), &args);
     }
 }
 
-fn need_run(source: &Path, target: &Path, includes_modified: SystemTime)
-            -> bool {
+fn need_run(source: &Path, target: &Path, includes_modified: SystemTime) -> bool {
     let s_modified = file_modified(source);
     if let Ok(target_metadata) = std::fs::metadata(target) {
         let target_modified = target_metadata.modified().unwrap();
@@ -710,12 +744,13 @@ fn need_run(source: &Path, target: &Path, includes_modified: SystemTime)
 fn file_modified(path: &Path) -> SystemTime {
     let path = Path::new(path);
     let path_as_str = format!("{:?}", path);
-    std::fs::metadata(path).expect(&path_as_str).modified().expect("nah")
+    std::fs::metadata(path)
+        .expect(&path_as_str)
+        .modified()
+        .expect("nah")
 }
 
-fn get_command(var: &str, default: &str) -> String {
-    std::env::var(var).unwrap_or(default.into())
-}
+fn get_command(var: &str, default: &str) -> String { std::env::var(var).unwrap_or(default.into()) }
 
 fn check_all_files_tracked() {
     for path in &["crypto", "include", "third_party/fiat"] {
@@ -727,20 +762,10 @@ fn is_tracked(file: &DirEntry) {
     let p = file.path();
     let cmp = |f| p == PathBuf::from(f);
     let tracked = match p.extension().and_then(|p| p.to_str()) {
-        Some("h") |
-        Some("inl") => {
-            RING_INCLUDES.iter().any(cmp)
-        },
-        Some("c") |
-        Some("S") |
-        Some("asm") => {
-            RING_SRCS.iter().any(|(_, f)| cmp(f)) ||
-                RING_TEST_SRCS.iter().any(cmp)
-        },
-        Some("pl") => {
-            RING_SRCS.iter().any(|(_, f)| cmp(f)) ||
-                RING_PERL_INCLUDES.iter().any(cmp)
-        },
+        Some("h") | Some("inl") => RING_INCLUDES.iter().any(cmp),
+        Some("c") | Some("S") | Some("asm") =>
+            RING_SRCS.iter().any(|(_, f)| cmp(f)) || RING_TEST_SRCS.iter().any(cmp),
+        Some("pl") => RING_SRCS.iter().any(|(_, f)| cmp(f)) || RING_PERL_INCLUDES.iter().any(cmp),
         _ => true,
     };
     if !tracked {
@@ -749,7 +774,8 @@ fn is_tracked(file: &DirEntry) {
 }
 
 fn walk_dir<F>(dir: &Path, cb: &F)
-    where F: Fn(&DirEntry)
+where
+    F: Fn(&DirEntry),
 {
     if dir.is_dir() {
         for entry in fs::read_dir(dir).unwrap() {

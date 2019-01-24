@@ -14,14 +14,13 @@
 
 //! Constant-time operations.
 
-use {c, error};
+use crate::{c, error};
 
 /// Returns `Ok(())` if `a == b` and `Err(error::Unspecified)` otherwise.
 /// The comparison of `a` and `b` is done in constant time with respect to the
 /// contents of each, but NOT in constant time with respect to the lengths of
 /// `a` and `b`.
-pub fn verify_slices_are_equal(a: &[u8], b: &[u8])
-                               -> Result<(), error::Unspecified> {
+pub fn verify_slices_are_equal(a: &[u8], b: &[u8]) -> Result<(), error::Unspecified> {
     if a.len() != b.len() {
         return Err(error::Unspecified);
     }
@@ -32,6 +31,6 @@ pub fn verify_slices_are_equal(a: &[u8], b: &[u8])
     }
 }
 
-extern {
+extern "C" {
     fn GFp_memcmp(a: *const u8, b: *const u8, len: c::size_t) -> c::int;
 }

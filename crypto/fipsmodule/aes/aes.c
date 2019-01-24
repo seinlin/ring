@@ -48,15 +48,14 @@
 
 #include <GFp/aes.h>
 
-#include <assert.h>
-
 #include <GFp/cpu.h>
 
 #include "internal.h"
 #include "../modes/internal.h"
 
-
-#if defined(GFp_C_AES)
+int GFp_aes_nohw_set_encrypt_key(const uint8_t *key, unsigned bits,
+                                 AES_KEY *aeskey);
+void GFp_aes_nohw_encrypt(const uint8_t *in, uint8_t *out, const AES_KEY *key);
 
 // Te0[x] = S [x].[02, 01, 01, 03];
 // Te1[x] = S [x].[03, 02, 01, 01];
@@ -286,11 +285,14 @@ static const uint32_t rcon[] = {
 };
 
 // |bits| must be 128 or 256. 192-bit keys are not supported.
-void GFp_aes_c_set_encrypt_key(const uint8_t *key, unsigned bits,
-                               AES_KEY *aeskey) {
+int GFp_aes_nohw_set_encrypt_key(const uint8_t *key, unsigned bits,
+                                 AES_KEY *aeskey) {
   assert(key != NULL);
   assert(aeskey != NULL);
-  assert(bits == 128 || bits == 256);
+
+  if (bits != 128 && bits != 256) {
+    return -2;
+  }
 
   uint32_t *rk;
   int i = 0;
@@ -315,7 +317,7 @@ void GFp_aes_c_set_encrypt_key(const uint8_t *key, unsigned bits,
       rk[6] = rk[2] ^ rk[5];
       rk[7] = rk[3] ^ rk[6];
       if (++i == 10) {
-        return;
+        return 0;
       }
       rk += 4;
     }
@@ -337,7 +339,7 @@ void GFp_aes_c_set_encrypt_key(const uint8_t *key, unsigned bits,
     rk[10] = rk[2] ^ rk[9];
     rk[11] = rk[3] ^ rk[10];
     if (++i == 7) {
-      return;
+      return 0;
     }
     temp = rk[11];
     rk[12] = rk[4] ^ (Te2[(temp >> 24)] & 0xff000000) ^
@@ -352,10 +354,9 @@ void GFp_aes_c_set_encrypt_key(const uint8_t *key, unsigned bits,
   }
 }
 
-void GFp_aes_c_encrypt(const uint8_t *in, uint8_t *out, const AES_KEY *key) {
+void GFp_aes_nohw_encrypt(const uint8_t *in, uint8_t *out, const AES_KEY *key) {
   const uint32_t *rk;
   uint32_t s0, s1, s2, s3, t0, t1, t2, t3;
-  int r;
 
   assert(in && out && key);
   rk = key->rd_key;
@@ -368,7 +369,7 @@ void GFp_aes_c_encrypt(const uint8_t *in, uint8_t *out, const AES_KEY *key) {
   s3 = from_be_u32_ptr(in + 12) ^ rk[3];
 
   // Nr - 1 full rounds:
-  r = key->rounds >> 1;
+  unsigned r = key->rounds >> 1;
   for (;;) {
     t0 = Te0[(s0 >> 24)] ^ Te1[(s1 >> 16) & 0xff] ^ Te2[(s2 >> 8) & 0xff] ^
          Te3[(s3) & 0xff] ^ rk[4];
@@ -412,6 +413,3 @@ void GFp_aes_c_encrypt(const uint8_t *in, uint8_t *out, const AES_KEY *key) {
        rk[3];
   to_be_u32_ptr(out + 12, s3);
 }
-
-#endif  // defined(GFp_C_AES)
-

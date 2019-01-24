@@ -14,10 +14,15 @@
 
 //! ECDSA Signatures using the P-256 and P-384 curves.
 
-use arithmetic::montgomery::*;
-use {der, digest, error, private, signature};
 use super::digest_scalar::digest_scalar;
-use ec::suite_b::{ops::*, public_key::*, verify_jacobian_point_is_on_the_curve};
+use crate::{
+    arithmetic::montgomery::*,
+    digest,
+    ec::suite_b::{ops::*, public_key::*, verify_jacobian_point_is_on_the_curve},
+    error,
+    io::der,
+    limb, sealed, signature,
+};
 use untrusted;
 
 /// An ECDSA verification algorithm.
@@ -25,9 +30,11 @@ pub struct Algorithm {
     ops: &'static PublicScalarOps,
     digest_alg: &'static digest::Algorithm,
     split_rs:
-        for<'a> fn(ops: &'static ScalarOps, input: &mut untrusted::Reader<'a>)
-                   -> Result<(untrusted::Input<'a>, untrusted::Input<'a>),
-                             error::Unspecified>,
+        for<'a> fn(
+            ops: &'static ScalarOps,
+            input: &mut untrusted::Reader<'a>,
+        )
+            -> Result<(untrusted::Input<'a>, untrusted::Input<'a>), error::Unspecified>,
     id: AlgorithmID,
 }
 
@@ -41,11 +48,31 @@ enum AlgorithmID {
     ECDSA_P384_SHA384_FIXED,
 }
 
-derive_debug_via_self!(Algorithm, self.id);
+derive_debug_via_id!(Algorithm);
 
 impl signature::VerificationAlgorithm for Algorithm {
-    fn verify(&self, public_key: untrusted::Input, msg: untrusted::Input,
-              signature: untrusted::Input) -> Result<(), error::Unspecified> {
+    fn verify(
+        &self, public_key: untrusted::Input, msg: untrusted::Input, signature: untrusted::Input,
+    ) -> Result<(), error::Unspecified> {
+        let e = {
+            // NSA Guide Step 2: "Use the selected hash function to compute H =
+            // Hash(M)."
+            let h = digest::digest(self.digest_alg, msg.as_slice_less_safe());
+
+            // NSA Guide Step 3: "Convert the bit string H to an integer e as
+            // described in Appendix B.2."
+            digest_scalar(self.ops.scalar_ops, h)
+        };
+
+        self.verify_digest(public_key, e, signature)
+    }
+}
+
+impl Algorithm {
+    /// This is intentionally not public.
+    fn verify_digest(
+        &self, public_key: untrusted::Input, e: Scalar, signature: untrusted::Input,
+    ) -> Result<(), error::Unspecified> {
         // NSA Suite B Implementer's Guide to ECDSA Section 3.4.2.
 
         let public_key_ops = self.ops.public_key_ops;
@@ -70,25 +97,14 @@ impl signature::VerificationAlgorithm for Algorithm {
         // handled by `parse_uncompressed_point`.
         let peer_pub_key = parse_uncompressed_point(public_key_ops, public_key)?;
 
-        let (r, s) = signature.read_all(
-            error::Unspecified, |input| (self.split_rs)(scalar_ops, input))?;
+        let (r, s) = signature.read_all(error::Unspecified, |input| {
+            (self.split_rs)(scalar_ops, input)
+        })?;
 
         // NSA Guide Step 1: "If r and s are not both integers in the interval
         // [1, n − 1], output INVALID."
-        let r = scalar_parse_big_endian_variable(public_key_ops.common,
-                                                 AllowZero::No, r)?;
-        let s = scalar_parse_big_endian_variable(public_key_ops.common,
-                                                 AllowZero::No, s)?;
-
-        let e = {
-            // NSA Guide Step 2: "Use the selected hash function to compute H =
-            // Hash(M)."
-            let h = digest::digest(self.digest_alg, msg.as_slice_less_safe());
-
-            // NSA Guide Step 3: "Convert the bit string H to an integer e as
-            // described in Appendix B.2."
-            digest_scalar(scalar_ops, &h)
-        };
+        let r = scalar_parse_big_endian_variable(public_key_ops.common, limb::AllowZero::No, r)?;
+        let s = scalar_parse_big_endian_variable(public_key_ops.common, limb::AllowZero::No, s)?;
 
         // NSA Guide Step 4: "Compute w = s**−1 mod n, using the routine in
         // Appendix B.1."
@@ -102,8 +118,7 @@ impl signature::VerificationAlgorithm for Algorithm {
         // NSA Guide Step 6: "Compute the elliptic curve point
         // R = (xR, yR) = u1*G + u2*Q, using EC scalar multiplication and EC
         // addition. If R is equal to the point at infinity, output INVALID."
-        let product =
-            twin_mul(self.ops.private_key_ops, &u1, &u2, &peer_pub_key);
+        let product = twin_mul(self.ops.private_key_ops, &u1, &u2, &peer_pub_key);
 
         // Verify that the point we computed is on the curve; see
         // `verify_affine_point_is_on_the_curve_scaled` for details on why. It
@@ -112,8 +127,7 @@ impl signature::VerificationAlgorithm for Algorithm {
         // `verify_affine_point_is_on_the_curve_scaled` for details on why).
         // But, we're going to avoid converting to affine for performance
         // reasons, so we do the verification using the Jacobian coordinates.
-        let z2 = verify_jacobian_point_is_on_the_curve(public_key_ops.common,
-                                                       &product)?;
+        let z2 = verify_jacobian_point_is_on_the_curve(public_key_ops.common, &product)?;
 
         // NSA Guide Step 7: "Compute v = xR mod n."
         // NSA Guide Step 8: "Compare v and r0. If v = r0, output VALID;
@@ -122,8 +136,9 @@ impl signature::VerificationAlgorithm for Algorithm {
         // Instead, we use Greg Maxwell's trick to avoid the inversion mod `q`
         // that would be necessary to compute the affine X coordinate.
         let x = public_key_ops.common.point_x(&product);
-        fn sig_r_equals_x(ops: &PublicScalarOps, r: &Elem<Unencoded>,
-                          x: &Elem<R>, z2: &Elem<R>) -> bool {
+        fn sig_r_equals_x(
+            ops: &PublicScalarOps, r: &Elem<Unencoded>, x: &Elem<R>, z2: &Elem<R>,
+        ) -> bool {
             let cops = ops.public_key_ops.common;
             let r_jacobian = cops.elem_product(z2, r);
             let x = cops.elem_unencoded(x);
@@ -134,8 +149,7 @@ impl signature::VerificationAlgorithm for Algorithm {
             return Ok(());
         }
         if self.ops.elem_less_than(&r, &self.ops.q_minus_n) {
-            let r_plus_n =
-                self.ops.elem_sum(&r, &public_key_ops.common.n);
+            let r_plus_n = self.ops.elem_sum(&r, &public_key_ops.common.n);
             if sig_r_equals_x(self.ops, &r_plus_n, &x, &z2) {
                 return Ok(());
             }
@@ -145,12 +159,11 @@ impl signature::VerificationAlgorithm for Algorithm {
     }
 }
 
-impl private::Sealed for Algorithm {}
+impl sealed::Sealed for Algorithm {}
 
 fn split_rs_fixed<'a>(
-        ops: &'static ScalarOps, input: &mut untrusted::Reader<'a>)
-        -> Result<(untrusted::Input<'a>, untrusted::Input<'a>),
-                  error::Unspecified> {
+    ops: &'static ScalarOps, input: &mut untrusted::Reader<'a>,
+) -> Result<(untrusted::Input<'a>, untrusted::Input<'a>), error::Unspecified> {
     let scalar_len = ops.scalar_bytes_len();
     let r = input.skip_and_get_input(scalar_len)?;
     let s = input.skip_and_get_input(scalar_len)?;
@@ -158,24 +171,23 @@ fn split_rs_fixed<'a>(
 }
 
 fn split_rs_asn1<'a>(
-        _ops: &'static ScalarOps, input: &mut untrusted::Reader<'a>)
-        -> Result<(untrusted::Input<'a>, untrusted::Input<'a>),
-                  error::Unspecified> {
+    _ops: &'static ScalarOps, input: &mut untrusted::Reader<'a>,
+) -> Result<(untrusted::Input<'a>, untrusted::Input<'a>), error::Unspecified> {
     der::nested(input, der::Tag::Sequence, error::Unspecified, |input| {
-        let r = der::positive_integer(input)?;
-        let s = der::positive_integer(input)?;
+        let r = der::positive_integer(input)?.big_endian_without_leading_zero();
+        let s = der::positive_integer(input)?.big_endian_without_leading_zero();
         Ok((r, s))
     })
 }
 
-fn twin_mul(ops: &PrivateKeyOps, g_scalar: &Scalar, p_scalar: &Scalar,
-            p_xy: &(Elem<R>, Elem<R>)) -> Point {
+fn twin_mul(
+    ops: &PrivateKeyOps, g_scalar: &Scalar, p_scalar: &Scalar, p_xy: &(Elem<R>, Elem<R>),
+) -> Point {
     // XXX: Inefficient. TODO: implement interleaved wNAF multiplication.
     let scaled_g = ops.point_mul_base(g_scalar);
     let scaled_p = ops.point_mul(p_scalar, p_xy);
     ops.common.point_sum(&scaled_g, &scaled_p)
 }
-
 
 /// Verification of fixed-length (PKCS#11 style) ECDSA signatures using the
 /// P-256 curve and SHA-256.
@@ -258,3 +270,61 @@ pub static ECDSA_P384_SHA384_ASN1: Algorithm = Algorithm {
     split_rs: split_rs_asn1,
     id: AlgorithmID::ECDSA_P384_SHA384_ASN1,
 };
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test;
+
+    #[test]
+    fn test_digest_based_test_vectors() {
+        test::from_file(
+            "crypto/fipsmodule/ecdsa/ecdsa_verify_tests.txt",
+            |section, test_case| {
+                assert_eq!(section, "");
+
+                let curve_name = test_case.consume_string("Curve");
+
+                let public_key = {
+                    let mut public_key = Vec::new();
+                    public_key.push(0x04);
+                    public_key.extend(&test_case.consume_bytes("X"));
+                    public_key.extend(&test_case.consume_bytes("Y"));
+                    public_key
+                };
+
+                let digest = test_case.consume_bytes("Digest");
+
+                let sig = {
+                    let mut sig = Vec::new();
+                    sig.extend(&test_case.consume_bytes("R"));
+                    sig.extend(&test_case.consume_bytes("S"));
+                    sig
+                };
+
+                let invalid = test_case.consume_optional_string("Invalid");
+
+                let alg = match curve_name.as_str() {
+                    "P-256" => &ECDSA_P256_SHA256_FIXED,
+                    "P-384" => &ECDSA_P384_SHA384_FIXED,
+                    _ => {
+                        panic!("Unsupported curve: {}", curve_name);
+                    },
+                };
+
+                let digest = super::super::digest_scalar::digest_bytes_scalar(
+                    &alg.ops.scalar_ops,
+                    &digest[..],
+                );
+                let actual_result = alg.verify_digest(
+                    untrusted::Input::from(&public_key[..]),
+                    digest,
+                    untrusted::Input::from(&sig[..]),
+                );
+                assert_eq!(actual_result.is_ok(), invalid.is_none());
+
+                Ok(())
+            },
+        );
+    }
+}

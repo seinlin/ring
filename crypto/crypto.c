@@ -16,8 +16,6 @@
 #define _GNU_SOURCE
 #endif
 
-#include <stdint.h>
-
 #include <GFp/cpu.h>
 
 #if defined(__linux__)
@@ -67,7 +65,8 @@ HIDDEN uint32_t GFp_ia32cap_P[4] = {0};
 #if defined(OPENSSL_STATIC_ARMCAP)
 
 HIDDEN uint32_t GFp_armcap_P =
-#if defined(OPENSSL_STATIC_ARMCAP_NEON) || defined(__ARM_NEON__)
+#if defined(OPENSSL_STATIC_ARMCAP_NEON) || \
+    (defined(__ARM_NEON__) || defined(__ARM_NEON))
     ARMV7_NEON |
 #endif
 #if defined(OPENSSL_STATIC_ARMCAP_AES) || defined(__ARM_FEATURE_CRYPTO)

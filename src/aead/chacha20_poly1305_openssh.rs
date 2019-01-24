@@ -29,7 +29,12 @@
 //!    http://cvsweb.openbsd.org/cgi-bin/cvsweb/src/usr.bin/ssh/PROTOCOL.chacha20poly1305?annotate=HEAD
 //! [RFC 4253]: https://tools.ietf.org/html/rfc4253
 
-use {chacha, error, poly1305};
+use super::{
+    chacha::{self, *},
+    chacha20_poly1305::derive_poly1305_key,
+    poly1305, Nonce, Tag,
+};
+use crate::{constant_time, endian::*, error, polyfill::convert::*};
 
 /// A key for sealing packets.
 pub struct SealingKey {
@@ -39,7 +44,9 @@ pub struct SealingKey {
 impl SealingKey {
     /// Constructs a new `SealingKey`.
     pub fn new(key_material: &[u8; KEY_LEN]) -> SealingKey {
-        SealingKey { key: Key::new(key_material) }
+        SealingKey {
+            key: Key::new(key_material),
+        }
     }
 
     /// Seals (encrypts and signs) a packet.
@@ -49,26 +56,27 @@ impl SealingKey {
     /// `padding_length||payload||random padding`. It will be overwritten by
     /// `encrypted_packet_length||ciphertext`, where `encrypted_packet_length`
     /// is encrypted with `K_1` and `ciphertext` is encrypted by `K_2`.
-    pub fn seal_in_place(&self, sequence_number: u32,
-                         plaintext_in_ciphertext_out: &mut [u8],
-                         tag_out: &mut [u8; TAG_LEN]) {
+    pub fn seal_in_place(
+        &self, sequence_number: u32, plaintext_in_ciphertext_out: &mut [u8],
+        tag_out: &mut [u8; TAG_LEN],
+    ) {
         let mut counter = make_counter(sequence_number);
+        let poly_key = derive_poly1305_key(&self.key.k_2, counter.increment());
 
         {
             let (len_in_out, data_and_padding_in_out) =
                 plaintext_in_ciphertext_out.split_at_mut(PACKET_LENGTH_LEN);
 
-            chacha::chacha20_xor_in_place(&self.key.k_1, &counter, len_in_out);
-
-            counter[0] = 1;
-            chacha::chacha20_xor_in_place(&self.key.k_2, &counter,
-                                          data_and_padding_in_out);
+            self.key
+                .k_1
+                .encrypt_in_place(make_counter(sequence_number), len_in_out);
+            self.key
+                .k_2
+                .encrypt_in_place(counter, data_and_padding_in_out);
         }
 
-        counter[0] = 0;
-        let poly_key = poly1305::Key::derive_using_chacha(&self.key.k_2,
-                                                          &counter);
-        poly1305::sign(poly_key, plaintext_in_ciphertext_out, tag_out);
+        let Tag(tag) = poly1305::sign(poly_key, plaintext_in_ciphertext_out);
+        tag_out.copy_from_slice(tag.as_ref());
     }
 }
 
@@ -80,7 +88,9 @@ pub struct OpeningKey {
 impl OpeningKey {
     /// Constructs a new `OpeningKey`.
     pub fn new(key_material: &[u8; KEY_LEN]) -> OpeningKey {
-        OpeningKey { key: Key::new(key_material) }
+        OpeningKey {
+            key: Key::new(key_material),
+        }
     }
 
     /// Returns the decrypted, but unauthenticated, packet length.
@@ -88,13 +98,11 @@ impl OpeningKey {
     /// Importantly, the result won't be authenticated until `open_in_place` is
     /// called.
     pub fn decrypt_packet_length(
-            &self, sequence_number: u32,
-            encrypted_packet_length: [u8; PACKET_LENGTH_LEN])
-            -> [u8; PACKET_LENGTH_LEN] {
+        &self, sequence_number: u32, encrypted_packet_length: [u8; PACKET_LENGTH_LEN],
+    ) -> [u8; PACKET_LENGTH_LEN] {
         let mut packet_length = encrypted_packet_length;
         let counter = make_counter(sequence_number);
-        chacha::chacha20_xor_in_place(&self.key.k_1, &counter,
-                                      &mut packet_length);
+        self.key.k_1.encrypt_in_place(counter, &mut packet_length);
         packet_length
     }
 
@@ -107,24 +115,21 @@ impl OpeningKey {
     /// `plaintext` is `&ciphertext_in_plaintext_out[PACKET_LENGTH_LEN..]`;
     /// otherwise the contents of `ciphertext_in_plaintext_out` are unspecified
     /// and must not be used.
-    pub fn open_in_place<'a>(&self, sequence_number: u32,
-                             ciphertext_in_plaintext_out: &'a mut [u8],
-                             tag: &[u8; TAG_LEN])
-                             -> Result<&'a [u8], error::Unspecified> {
+    pub fn open_in_place<'a>(
+        &self, sequence_number: u32, ciphertext_in_plaintext_out: &'a mut [u8], tag: &[u8; TAG_LEN],
+    ) -> Result<&'a [u8], error::Unspecified> {
         let mut counter = make_counter(sequence_number);
 
         // We must verify the tag before decrypting so that
         // `ciphertext_in_plaintext_out` is unmodified if verification fails.
         // This is beyond what we guarantee.
-        let poly_key = poly1305::Key::derive_using_chacha(&self.key.k_2,
-                                                          &counter);
-        poly1305::verify(poly_key, ciphertext_in_plaintext_out, tag)?;
+        let poly_key = derive_poly1305_key(&self.key.k_2, counter.increment());
+        verify(poly_key, ciphertext_in_plaintext_out, tag)?;
 
-        let plaintext_in_ciphertext_out =
-            &mut ciphertext_in_plaintext_out[PACKET_LENGTH_LEN..];
-        counter[0] = 1;
-        chacha::chacha20_xor_in_place(&self.key.k_2, &counter,
-                                      plaintext_in_ciphertext_out);
+        let plaintext_in_ciphertext_out = &mut ciphertext_in_plaintext_out[PACKET_LENGTH_LEN..];
+        self.key
+            .k_2
+            .encrypt_in_place(counter, plaintext_in_ciphertext_out);
 
         Ok(plaintext_in_ciphertext_out)
     }
@@ -138,34 +143,33 @@ struct Key {
 impl Key {
     pub fn new(key_material: &[u8; KEY_LEN]) -> Key {
         // The first half becomes K_2 and the second half becomes K_1.
+        let (k_2, k_1) = key_material.into_();
         Key {
-            k_1: chacha::key_from_bytes(
-                    slice_as_array_ref!(
-                        &key_material[chacha::KEY_LEN_IN_BYTES..],
-                        chacha::KEY_LEN_IN_BYTES).unwrap()),
-            k_2: chacha::key_from_bytes(
-                    slice_as_array_ref!(
-                        &key_material[..chacha::KEY_LEN_IN_BYTES],
-                        chacha::KEY_LEN_IN_BYTES).unwrap()),
+            k_1: chacha::Key::from(k_1),
+            k_2: chacha::Key::from(k_2),
         }
     }
 }
 
-fn make_counter(sequence_number: u32) -> chacha::Counter {
-    let mut sequence_number = sequence_number;
-    let mut nonce = [0; chacha::NONCE_LEN];
-    for i in 0..4 {
-        nonce[chacha::NONCE_LEN - 1 - i] = (sequence_number % 0x100) as u8;
-        sequence_number /= 0x100;
-    }
-    chacha::make_counter(&nonce, 0)
+fn make_counter(sequence_number: u32) -> Counter {
+    let nonce = [
+        BigEndian::ZERO,
+        BigEndian::ZERO,
+        BigEndian::from(sequence_number),
+    ];
+    Counter::zero(Nonce::try_assume_unique_for_key(as_bytes(&nonce)).unwrap())
 }
 
 /// The length of key.
-pub const KEY_LEN: usize = chacha::KEY_LEN_IN_BYTES * 2;
-
-/// The length of a tag.
-pub const TAG_LEN: usize = poly1305::TAG_LEN;
+pub const KEY_LEN: usize = chacha::KEY_LEN * 2;
 
 /// The length in bytes of the `packet_length` field in a SSH packet.
 pub const PACKET_LENGTH_LEN: usize = 4; // 32 bits
+
+/// The length in bytes of an authentication tag.
+pub const TAG_LEN: usize = super::BLOCK_LEN;
+
+fn verify(key: poly1305::Key, msg: &[u8], tag: &[u8; TAG_LEN]) -> Result<(), error::Unspecified> {
+    let Tag(calculated_tag) = poly1305::sign(key, msg);
+    constant_time::verify_slices_are_equal(calculated_tag.as_ref(), tag)
+}

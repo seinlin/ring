@@ -28,22 +28,24 @@
     unused_qualifications,
     unused_results,
     variant_size_differences,
-    warnings,
+    warnings
 )]
 
-extern crate ring;
-extern crate untrusted;
+#[cfg(feature = "use_heap")]
+use ring::{
+    error,
+    io::der,
+    rand,
+    signature::{self, KeyPair},
+    test,
+};
 
-use ring::{der, error, signature, test};
-
-#[cfg(feature = "rsa_signing")]
-use ring::rand;
-
-
-#[cfg(feature = "rsa_signing")]
+#[cfg(feature = "use_heap")]
 #[test]
 fn rsa_from_pkcs8_test() {
     test::from_file("tests/rsa_from_pkcs8_tests.txt", |section, test_case| {
+        use std::error::Error;
+
         assert_eq!(section, "");
 
         let input = test_case.consume_bytes("Input");
@@ -51,14 +53,18 @@ fn rsa_from_pkcs8_test() {
 
         let error = test_case.consume_optional_string("Error");
 
-        assert_eq!(signature::RSAKeyPair::from_pkcs8(input).is_ok(),
-                   error.is_none());
+        match (signature::RsaKeyPair::from_pkcs8(input), error) {
+            (Ok(_), None) => (),
+            (Err(e), None) => panic!("Failed with error \"{}\", but expected to succeed", e),
+            (Ok(_), Some(e)) => panic!("Succeeded, but expected error \"{}\"", e),
+            (Err(actual), Some(expected)) => assert_eq!(actual.description(), expected),
+        };
 
         Ok(())
     });
 }
 
-#[cfg(feature = "rsa_signing")]
+#[cfg(feature = "use_heap")]
 #[test]
 fn test_signature_rsa_pkcs1_sign() {
     let rng = rand::SystemRandom::new();
@@ -70,7 +76,7 @@ fn test_signature_rsa_pkcs1_sign() {
             "SHA256" => &signature::RSA_PKCS1_SHA256,
             "SHA384" => &signature::RSA_PKCS1_SHA384,
             "SHA512" => &signature::RSA_PKCS1_SHA512,
-            _ => { panic!("Unsupported digest: {}", digest_name) }
+            _ => panic!("Unsupported digest: {}", digest_name),
         };
 
         let private_key = test_case.consume_bytes("Key");
@@ -79,7 +85,7 @@ fn test_signature_rsa_pkcs1_sign() {
         let result = test_case.consume_string("Result");
 
         let private_key = untrusted::Input::from(&private_key);
-        let key_pair = signature::RSAKeyPair::from_der(private_key);
+        let key_pair = signature::RsaKeyPair::from_der(private_key);
         if result == "Fail-Invalid-Key" {
             assert!(key_pair.is_err());
             return Ok(());
@@ -89,17 +95,16 @@ fn test_signature_rsa_pkcs1_sign() {
 
         // XXX: This test is too slow on Android ARM Travis CI builds.
         // TODO: re-enable these tests on Android ARM.
-        let mut signing_state =
-            signature::RSASigningState::new(key_pair).unwrap();
-        let mut actual =
-            vec![0u8; signing_state.key_pair().public_modulus_len()];
-        signing_state.sign(alg, &rng, &msg, actual.as_mut_slice()).unwrap();
+        let mut actual = vec![0u8; key_pair.public_modulus_len()];
+        key_pair
+            .sign(alg, &rng, &msg, actual.as_mut_slice())
+            .unwrap();
         assert_eq!(actual.as_slice() == &expected[..], result == "Pass");
         Ok(())
     });
 }
 
-#[cfg(feature = "rsa_signing")]
+#[cfg(feature = "use_heap")]
 #[test]
 fn test_signature_rsa_pss_sign() {
     test::from_file("tests/rsa_pss_sign_tests.txt", |section, test_case| {
@@ -110,45 +115,31 @@ fn test_signature_rsa_pss_sign() {
             "SHA256" => &signature::RSA_PSS_SHA256,
             "SHA384" => &signature::RSA_PSS_SHA384,
             "SHA512" => &signature::RSA_PSS_SHA512,
-            _ =>  { panic!("Unsupported digest: {}", digest_name) }
+            _ => panic!("Unsupported digest: {}", digest_name),
         };
 
         let result = test_case.consume_string("Result");
         let private_key = test_case.consume_bytes("Key");
         let private_key = untrusted::Input::from(&private_key);
-        let key_pair = signature::RSAKeyPair::from_der(private_key);
+        let key_pair = signature::RsaKeyPair::from_der(private_key);
         if key_pair.is_err() && result == "Fail-Invalid-Key" {
             return Ok(());
         }
         let key_pair = key_pair.unwrap();
-        let key_pair = std::sync::Arc::new(key_pair);
         let msg = test_case.consume_bytes("Msg");
         let salt = test_case.consume_bytes("Salt");
         let expected = test_case.consume_bytes("Sig");
 
         let rng = test::rand::FixedSliceRandom { bytes: &salt };
 
-        let mut signing_state =
-            signature::RSASigningState::new(key_pair).unwrap();
-        let mut actual =
-            vec![0u8; signing_state.key_pair().public_modulus_len()];
-        signing_state.sign(alg, &rng, &msg, actual.as_mut_slice())?;
+        let mut actual = vec![0u8; key_pair.public_modulus_len()];
+        key_pair.sign(alg, &rng, &msg, actual.as_mut_slice())?;
         assert_eq!(actual.as_slice() == &expected[..], result == "Pass");
         Ok(())
     });
 }
 
-#[cfg(feature = "rsa_signing")]
-#[test]
-fn test_rsa_key_pair_traits() {
-    test::compile_time_assert_send::<signature::RSAKeyPair>();
-    test::compile_time_assert_sync::<signature::RSAKeyPair>();
-    test::compile_time_assert_debug::<signature::RSAKeyPair>();
-    test::compile_time_assert_send::<signature::RSASigningState>();
-    // TODO: Test that RSASigningState is NOT Sync.
-}
-
-
+#[cfg(feature = "use_heap")]
 #[test]
 fn test_signature_rsa_pkcs1_verify() {
     test::from_file("tests/rsa_pkcs1_verify_tests.txt", |section, test_case| {
@@ -160,7 +151,7 @@ fn test_signature_rsa_pkcs1_verify() {
             "SHA256" => &signature::RSA_PKCS1_2048_8192_SHA256,
             "SHA384" => &signature::RSA_PKCS1_2048_8192_SHA384,
             "SHA512" => &signature::RSA_PKCS1_2048_8192_SHA512,
-            _ =>  { panic!("Unsupported digest: {}", digest_name) }
+            _ => panic!("Unsupported digest: {}", digest_name),
         };
 
         let public_key = test_case.consume_bytes("Key");
@@ -169,13 +160,18 @@ fn test_signature_rsa_pkcs1_verify() {
         // Sanity check that we correctly DER-encoded the originally-
         // provided separate (n, e) components. When we add test vectors
         // for improperly-encoded signatures, we'll have to revisit this.
-        assert!(public_key.read_all(error::Unspecified, |input| {
-            der::nested(input, der::Tag::Sequence, error::Unspecified, |input| {
-                let _ = der::positive_integer(input)?;
-                let _ = der::positive_integer(input)?;
-                Ok(())
-            })
-        }).is_ok());
+        assert!(public_key
+            .read_all(error::Unspecified, |input| der::nested(
+                input,
+                der::Tag::Sequence,
+                error::Unspecified,
+                |input| {
+                    let _ = der::positive_integer(input)?;
+                    let _ = der::positive_integer(input)?;
+                    Ok(())
+                }
+            ))
+            .is_ok());
 
         let msg = test_case.consume_bytes("Msg");
         let msg = untrusted::Input::from(&msg);
@@ -192,6 +188,7 @@ fn test_signature_rsa_pkcs1_verify() {
     });
 }
 
+#[cfg(feature = "use_heap")]
 #[test]
 fn test_signature_rsa_pss_verify() {
     test::from_file("tests/rsa_pss_verify_tests.txt", |section, test_case| {
@@ -202,7 +199,7 @@ fn test_signature_rsa_pss_verify() {
             "SHA256" => &signature::RSA_PSS_2048_8192_SHA256,
             "SHA384" => &signature::RSA_PSS_2048_8192_SHA384,
             "SHA512" => &signature::RSA_PSS_2048_8192_SHA512,
-            _ =>  { panic!("Unsupported digest: {}", digest_name) }
+            _ => panic!("Unsupported digest: {}", digest_name),
         };
 
         let public_key = test_case.consume_bytes("Key");
@@ -211,13 +208,18 @@ fn test_signature_rsa_pss_verify() {
         // Sanity check that we correctly DER-encoded the originally-
         // provided separate (n, e) components. When we add test vectors
         // for improperly-encoded signatures, we'll have to revisit this.
-        assert!(public_key.read_all(error::Unspecified, |input| {
-            der::nested(input, der::Tag::Sequence, error::Unspecified, |input| {
-                let _ = der::positive_integer(input)?;
-                let _ = der::positive_integer(input)?;
-                Ok(())
-            })
-        }).is_ok());
+        assert!(public_key
+            .read_all(error::Unspecified, |input| der::nested(
+                input,
+                der::Tag::Sequence,
+                error::Unspecified,
+                |input| {
+                    let _ = der::positive_integer(input)?;
+                    let _ = der::positive_integer(input)?;
+                    Ok(())
+                }
+            ))
+            .is_ok());
 
         let msg = test_case.consume_bytes("Msg");
         let msg = untrusted::Input::from(&msg);
@@ -236,21 +238,59 @@ fn test_signature_rsa_pss_verify() {
 
 // Test for `primitive::verify()`. Read public key parts from a file
 // and use them to verify a signature.
+#[cfg(feature = "use_heap")]
 #[test]
 fn test_signature_rsa_primitive_verification() {
-    test::from_file("tests/rsa_primitive_verify_tests.txt",
-                    |section, test_case| {
-        assert_eq!(section, "");
-        let n = test_case.consume_bytes("n");
-        let e = test_case.consume_bytes("e");
-        let msg = test_case.consume_bytes("Msg");
-        let sig = test_case.consume_bytes("Sig");
-        let expected = test_case.consume_string("Result");
-        let result = signature::primitive::verify_rsa(
-            &signature::RSA_PKCS1_2048_8192_SHA256,
-            (untrusted::Input::from(&n), untrusted::Input::from(&e)),
-            untrusted::Input::from(&msg), untrusted::Input::from(&sig));
-        assert_eq!(result.is_ok(), expected == "Pass");
-        Ok(())
-    })
+    test::from_file(
+        "tests/rsa_primitive_verify_tests.txt",
+        |section, test_case| {
+            assert_eq!(section, "");
+            let n = test_case.consume_bytes("n");
+            let e = test_case.consume_bytes("e");
+            let msg = test_case.consume_bytes("Msg");
+            let sig = test_case.consume_bytes("Sig");
+            let expected = test_case.consume_string("Result");
+            let result = signature::primitive::verify_rsa(
+                &signature::RSA_PKCS1_2048_8192_SHA256,
+                (untrusted::Input::from(&n), untrusted::Input::from(&e)),
+                untrusted::Input::from(&msg),
+                untrusted::Input::from(&sig),
+            );
+            assert_eq!(result.is_ok(), expected == "Pass");
+            Ok(())
+        },
+    )
+}
+
+#[cfg(feature = "use_heap")]
+#[test]
+fn rsa_test_public_key_coverage() {
+    const PRIVATE_KEY: &'static [u8] = include_bytes!("rsa_test_private_key_2048.p8");
+    const PUBLIC_KEY: &'static [u8] = include_bytes!("rsa_test_public_key_2048.der");
+    const PUBLIC_KEY_DEBUG: &'static str = include_str!("rsa_test_public_key_2048_debug.txt");
+
+    let key_pair = signature::RsaKeyPair::from_pkcs8(untrusted::Input::from(PRIVATE_KEY)).unwrap();
+
+    // Test `AsRef<[u8]>`
+    assert_eq!(key_pair.public_key().as_ref(), PUBLIC_KEY);
+
+    // Test `Clone`.
+    let _ = key_pair.public_key().clone();
+
+    // Test `exponent()`.
+    assert_eq!(
+        &[0x01, 0x00, 0x01],
+        key_pair
+            .public_key()
+            .exponent()
+            .big_endian_without_leading_zero()
+            .as_slice_less_safe()
+    );
+
+    // Test `Debug`
+    assert_eq!(PUBLIC_KEY_DEBUG, format!("{:?}", key_pair.public_key()));
+    assert_eq!(
+        format!("RsaKeyPair {{ public_key: {:?} }}", key_pair.public_key()),
+        format!("{:?}", key_pair)
+    );
 }

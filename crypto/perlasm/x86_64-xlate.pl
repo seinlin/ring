@@ -124,6 +124,9 @@ my %globals;
 		$self->{sz} = "";
 	    } elsif ($self->{op} =~ /mov[dq]/ && $$line =~ /%xmm/) {
 		$self->{sz} = "";
+	    } elsif ($self->{op} =~ /^or([qlwb])$/) {
+		$self->{op} = "or";
+		$self->{sz} = $1;
 	    } elsif ($self->{op} =~ /([a-z]{3,})([qlwb])$/) {
 		$self->{op} = $1;
 		$self->{sz} = $2;
@@ -742,7 +745,7 @@ my %globals;
 				    }
 				    last;
 				  };
-		/\.rva|\.long|\.quad/
+		/\.rva|\.long|\.quad|\.byte/
 			    && do { $$line =~ s/([_a-z][_a-z0-9]*)/$globals{$1} or $1/gei;
 				    $$line =~ s/\.L/$decor/g;
 				    last;
@@ -1123,6 +1126,16 @@ my $endbranch = sub {
 
 ########################################################################
 
+{
+  my $comment = "#";
+  $comment = ";" if ($masm || $nasm);
+  print <<___;
+$comment This file is generated from a similarly-named Perl script in the BoringSSL
+$comment source tree. Do not edit by hand.
+
+___
+}
+
 if ($nasm) {
     print <<___;
 default	rel
@@ -1135,7 +1148,18 @@ ___
 OPTION	DOTNAME
 ___
 }
-print STDOUT "#if defined(__x86_64__) && !defined(OPENSSL_NO_ASM)\n" if ($gas);
+
+if ($gas) {
+	print <<___;
+#if defined(__has_feature)
+#if __has_feature(memory_sanitizer) && !defined(OPENSSL_NO_ASM)
+#define OPENSSL_NO_ASM
+#endif
+#endif
+
+#if defined(__x86_64__) && !defined(OPENSSL_NO_ASM)
+___
+}
 
 while(defined(my $line=<>)) {
 

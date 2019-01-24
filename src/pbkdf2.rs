@@ -31,7 +31,7 @@
 //!
 //! ```
 //! use ring::{digest, pbkdf2};
-//! use std::collections::HashMap;
+//! use std::{collections::HashMap, num::NonZeroU32};
 //!
 //! static DIGEST_ALG: &'static digest::Algorithm = &digest::SHA256;
 //! const CREDENTIAL_LEN: usize = digest::SHA256_OUTPUT_LEN;
@@ -42,7 +42,7 @@
 //! }
 //!
 //! struct PasswordDatabase {
-//!     pbkdf2_iterations: u32,
+//!     pbkdf2_iterations: NonZeroU32,
 //!     db_salt_component: [u8; 16],
 //!
 //!     // Normally this would be a persistent database.
@@ -91,7 +91,7 @@
 //! fn main() {
 //!     // Normally these parameters would be loaded from a configuration file.
 //!     let mut db = PasswordDatabase {
-//!         pbkdf2_iterations: 100_000,
+//!         pbkdf2_iterations: NonZeroU32::new(100_000).unwrap(),
 //!         db_salt_component: [
 //!             // This value was generated from a secure PRNG.
 //!             0xd6, 0x26, 0x98, 0xda, 0xf4, 0xdc, 0x50, 0x52,
@@ -112,7 +112,8 @@
 //!     assert!(db.verify_password("alice", "@74d7]404j|W}6u").is_ok());
 //! }
 
-use {constant_time, digest, error, hmac, polyfill};
+use crate::{constant_time, digest, error, hmac, polyfill};
+use core::num::NonZeroU32;
 
 /// Fills `out` with the key derived using PBKDF2 with the given inputs.
 ///
@@ -131,18 +132,14 @@ use {constant_time, digest, error, hmac, polyfill};
 /// | out         | dk (derived key)
 /// | out.len()   | dkLen (derived key length)
 ///
-/// C analog: `PKCS5_PBKDF2_HMAC`
-///
 /// # Panics
-///
-/// `derive` panics if `iterations < 1`.
 ///
 /// `derive` panics if `out.len()` is larger than (2**32 - 1) * the digest
 /// algorithm's output length, per the PBKDF2 specification.
-pub fn derive(digest_alg: &'static digest::Algorithm, iterations: u32,
-              salt: &[u8], secret: &[u8], out: &mut [u8]) {
-    assert!(iterations >= 1);
-
+pub fn derive(
+    digest_alg: &'static digest::Algorithm, iterations: NonZeroU32, salt: &[u8], secret: &[u8],
+    out: &mut [u8],
+) {
     let output_len = digest_alg.output_len;
 
     // This implementation's performance is asymptotically optimal as described
@@ -163,15 +160,16 @@ pub fn derive(digest_alg: &'static digest::Algorithm, iterations: u32,
     }
 }
 
-fn derive_block(secret: &hmac::SigningKey, iterations: u32, salt: &[u8],
-                idx: u32, out: &mut [u8]) {
+fn derive_block(
+    secret: &hmac::SigningKey, iterations: NonZeroU32, salt: &[u8], idx: u32, out: &mut [u8],
+) {
     let mut ctx = hmac::SigningContext::with_key(secret);
     ctx.update(salt);
     ctx.update(&polyfill::slice::be_u8_from_u32(idx));
 
     let mut u = ctx.sign();
 
-    let mut remaining = iterations;
+    let mut remaining: u32 = iterations.into();
     loop {
         for i in 0..out.len() {
             out[i] ^= u.as_ref()[i];
@@ -202,17 +200,14 @@ fn derive_block(secret: &hmac::SigningKey, iterations: u32, salt: &[u8],
 /// | `previously_derived`       | dk (derived key)
 /// | `previously_derived.len()` | dkLen (derived key length)
 ///
-/// C analog: `PKCS5_PBKDF2_HMAC` + `CRYPTO_memcmp`
-///
 /// # Panics
-///
-/// `verify` panics if `iterations < 1`.
 ///
 /// `verify` panics if `out.len()` is larger than (2**32 - 1) * the digest
 /// algorithm's output length, per the PBKDF2 specification.
-pub fn verify(digest_alg: &'static digest::Algorithm, iterations: u32,
-              salt: &[u8], secret: &[u8], previously_derived: &[u8])
-              -> Result<(), error::Unspecified> {
+pub fn verify(
+    digest_alg: &'static digest::Algorithm, iterations: NonZeroU32, salt: &[u8], secret: &[u8],
+    previously_derived: &[u8],
+) -> Result<(), error::Unspecified> {
     if previously_derived.is_empty() {
         return Err(error::Unspecified);
     }
@@ -235,8 +230,9 @@ pub fn verify(digest_alg: &'static digest::Algorithm, iterations: u32,
 
         // XXX: This isn't fully constant-time-safe. TODO: Fix that.
         let current_block_matches =
-            if constant_time::verify_slices_are_equal(
-                    derived_chunk, previously_derived_chunk).is_ok() {
+            if constant_time::verify_slices_are_equal(derived_chunk, previously_derived_chunk)
+                .is_ok()
+            {
                 1
             } else {
                 0

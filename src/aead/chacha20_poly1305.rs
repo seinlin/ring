@@ -12,7 +12,17 @@
 // OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
 // CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
-use {aead, chacha, error, poly1305, polyfill};
+use super::{
+    chacha::{self, Counter},
+    nonce::Iv,
+    poly1305, Aad, Block, Direction, Nonce, Tag, BLOCK_LEN,
+};
+use crate::{
+    aead,
+    endian::*,
+    error,
+    polyfill::{self, convert::*},
+};
 
 /// ChaCha20-Poly1305 as described in [RFC 7539].
 ///
@@ -20,81 +30,103 @@ use {aead, chacha, error, poly1305, polyfill};
 ///
 /// [RFC 7539]: https://tools.ietf.org/html/rfc7539
 pub static CHACHA20_POLY1305: aead::Algorithm = aead::Algorithm {
-    key_len: chacha::KEY_LEN_IN_BYTES,
+    key_len: chacha::KEY_LEN,
     init: chacha20_poly1305_init,
     seal: chacha20_poly1305_seal,
     open: chacha20_poly1305_open,
     id: aead::AlgorithmID::CHACHA20_POLY1305,
-    max_input_len: max_input_len!(CHACHA20_BLOCK_LEN, CHACHA20_OVERHEAD_BLOCKS_PER_NONCE),
+    max_input_len: super::max_input_len(64, 1),
 };
 
-const CHACHA20_BLOCK_LEN: u64 = 64;
-const CHACHA20_OVERHEAD_BLOCKS_PER_NONCE: u64 = 1;
-
 /// Copies |key| into |ctx_buf|.
-pub fn chacha20_poly1305_init(ctx_buf: &mut [u8], key: &[u8])
-                              -> Result<(), error::Unspecified> {
-    ctx_buf[..key.len()].copy_from_slice(key);
-    Ok(())
+fn chacha20_poly1305_init(key: &[u8]) -> Result<aead::KeyInner, error::Unspecified> {
+    let key: &[u8; chacha::KEY_LEN] = key.try_into_()?;
+    Ok(aead::KeyInner::ChaCha20Poly1305(chacha::Key::from(key)))
 }
 
-fn chacha20_poly1305_seal(ctx: &[u64; aead::KEY_CTX_BUF_ELEMS],
-                          nonce: &[u8; aead::NONCE_LEN], ad: &[u8],
-                          in_out: &mut [u8], tag_out: &mut [u8; aead::TAG_LEN])
-                          -> Result<(), error::Unspecified> {
-    let chacha20_key = ctx_as_key(ctx)?;
-    let mut counter = chacha::make_counter(nonce, 1);
-    chacha::chacha20_xor_in_place(&chacha20_key, &counter, in_out);
-    counter[0] = 0;
-    aead_poly1305(tag_out, chacha20_key, &counter, ad, in_out);
-    Ok(())
+fn chacha20_poly1305_seal(
+    key: &aead::KeyInner, nonce: Nonce, aad: Aad<&[u8]>, in_out: &mut [u8],
+) -> Tag {
+    aead(key, nonce, aad, in_out, Direction::Sealing)
 }
 
-fn chacha20_poly1305_open(ctx: &[u64; aead::KEY_CTX_BUF_ELEMS],
-                          nonce: &[u8; aead::NONCE_LEN], ad: &[u8],
-                          in_prefix_len: usize, in_out: &mut [u8],
-                          tag_out: &mut [u8; aead::TAG_LEN])
-                          -> Result<(), error::Unspecified> {
-    let chacha20_key = ctx_as_key(ctx)?;
-    let mut counter = chacha::make_counter(nonce, 0);
-    {
-        let ciphertext = &in_out[in_prefix_len..];
-        aead_poly1305(tag_out, chacha20_key, &counter, ad, ciphertext);
-    }
-    counter[0] = 1;
-    chacha::chacha20_xor_overlapping(&chacha20_key, &counter, in_out,
-                                     in_prefix_len);
-    Ok(())
+fn chacha20_poly1305_open(
+    key: &aead::KeyInner, nonce: Nonce, aad: Aad<&[u8]>, in_prefix_len: usize, in_out: &mut [u8],
+) -> Tag {
+    aead(
+        key,
+        nonce,
+        aad,
+        in_out,
+        Direction::Opening { in_prefix_len },
+    )
 }
 
-fn ctx_as_key(ctx: &[u64; aead::KEY_CTX_BUF_ELEMS])
-              -> Result<&chacha::Key, error::Unspecified> {
-    slice_as_array_ref!(
-        &polyfill::slice::u64_as_u32(ctx)[..(chacha::KEY_LEN_IN_BYTES / 4)],
-        chacha::KEY_LEN_IN_BYTES / 4)
-}
+pub type Key = chacha::Key;
 
-fn aead_poly1305(tag_out: &mut [u8; aead::TAG_LEN], chacha20_key: &chacha::Key,
-                 counter: &chacha::Counter, ad: &[u8], ciphertext: &[u8]) {
-    debug_assert_eq!(counter[0], 0);
-    let key = poly1305::Key::derive_using_chacha(chacha20_key, counter);
-    let mut ctx = poly1305::SigningContext::from_key(key);
-    poly1305_update_padded_16(&mut ctx, ad);
-    poly1305_update_padded_16(&mut ctx, ciphertext);
-    let lengths =
-        [polyfill::u64_from_usize(ad.len()).to_le(),
-         polyfill::u64_from_usize(ciphertext.len()).to_le()];
-    ctx.update(polyfill::slice::u64_as_u8(&lengths));
-    ctx.sign(tag_out);
+#[inline(always)] // Statically eliminate branches on `direction`.
+fn aead(
+    key: &aead::KeyInner, nonce: Nonce, Aad(aad): Aad<&[u8]>, in_out: &mut [u8],
+    direction: Direction,
+) -> Tag {
+    let chacha20_key = match key {
+        aead::KeyInner::ChaCha20Poly1305(key) => key,
+        _ => unreachable!(),
+    };
+
+    let mut counter = Counter::zero(nonce);
+    let mut ctx = {
+        let key = derive_poly1305_key(chacha20_key, counter.increment());
+        poly1305::Context::from_key(key)
+    };
+
+    poly1305_update_padded_16(&mut ctx, aad);
+
+    let in_out_len = match direction {
+        Direction::Opening { in_prefix_len } => {
+            poly1305_update_padded_16(&mut ctx, &in_out[in_prefix_len..]);
+            chacha20_key.encrypt_overlapping(counter, in_out, in_prefix_len);
+            in_out.len() - in_prefix_len
+        },
+        Direction::Sealing => {
+            chacha20_key.encrypt_in_place(counter, in_out);
+            poly1305_update_padded_16(&mut ctx, in_out);
+            in_out.len()
+        },
+    };
+
+    ctx.update_block(
+        Block::from_u64_le(
+            LittleEndian::from(polyfill::u64_from_usize(aad.len())),
+            LittleEndian::from(polyfill::u64_from_usize(in_out_len)),
+        ),
+        poly1305::Pad::Pad,
+    );
+    ctx.finish()
 }
 
 #[inline]
-fn poly1305_update_padded_16(ctx: &mut poly1305::SigningContext, data: &[u8]) {
-    ctx.update(data);
-    if data.len() % 16 != 0 {
-        static PADDING: [u8; 16] = [0u8; 16];
-        ctx.update(&PADDING[..PADDING.len() - (data.len() % 16)])
+fn poly1305_update_padded_16(ctx: &mut poly1305::Context, input: &[u8]) {
+    let remainder_len = input.len() % BLOCK_LEN;
+    let whole_len = input.len() - remainder_len;
+    if whole_len > 0 {
+        ctx.update_blocks(&input[..whole_len]);
     }
+    if remainder_len > 0 {
+        let mut block = Block::zero();
+        block.partial_copy_from(&input[whole_len..]);
+        ctx.update_block(block, poly1305::Pad::Pad)
+    }
+}
+
+// Also used by chacha20_poly1305_openssh.
+pub(super) fn derive_poly1305_key(chacha_key: &chacha::Key, iv: Iv) -> poly1305::Key {
+    let mut blocks = [Block::zero(); poly1305::KEY_BLOCKS];
+    chacha_key.encrypt_iv_xor_blocks_in_place(
+        iv,
+        <&mut [u8; poly1305::KEY_BLOCKS * BLOCK_LEN]>::from_(&mut blocks),
+    );
+    poly1305::Key::from(blocks)
 }
 
 #[cfg(test)]

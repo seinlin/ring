@@ -109,15 +109,26 @@
 #ifndef OPENSSL_HEADER_CRYPTO_INTERNAL_H
 #define OPENSSL_HEADER_CRYPTO_INTERNAL_H
 
+#include <GFp/base.h> // Must be first.
+
+#if defined(_MSC_VER)
+#pragma warning(push, 3)
+#endif
+
 #include <assert.h>
 
 #if defined(__clang__) || defined(_MSC_VER)
 #include <string.h>
 #endif
 
-#include <stddef.h>
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
 
-#include <GFp/base.h>
+#if defined(BORINGSSL_CONSTANT_TIME_VALIDATION)
+#include <valgrind/memcheck.h>
+#endif
+
 #include <GFp/type_check.h>
 
 #if defined(_MSC_VER)
@@ -133,19 +144,12 @@
 // reports support for C11.
 #define alignas(x) __attribute__ ((aligned (x)))
 #define alignof(x) __alignof__ (x)
-#elif !defined(__cplusplus)
-#if defined(_MSC_VER)
+#elif defined(_MSC_VER)
 #define alignas(x) __declspec(align(x))
 #define alignof(x) __alignof(x)
 #else
 #include <stdalign.h>
 #endif
-#endif
-
-#if defined(__cplusplus)
-extern "C" {
-#endif
-
 
 #if defined(OPENSSL_X86) || defined(OPENSSL_X86_64) || defined(OPENSSL_ARM) || \
     defined(OPENSSL_AARCH64) || defined(OPENSSL_PPC64LE)
@@ -257,12 +261,6 @@ static inline crypto_word constant_time_eq_w(crypto_word a,
   return constant_time_is_zero_w(a ^ b);
 }
 
-// constant_time_eq_int acts like |constant_time_eq_w| but works on int
-// values.
-static inline crypto_word constant_time_eq_int(int a, int b) {
-  return constant_time_eq_w((crypto_word)(a), (crypto_word)(b));
-}
-
 // constant_time_select_w returns (mask & a) | (~mask & b). When |mask| is all
 // 1s or all 0s (as returned by the methods above), the select methods return
 // either |a| (if |mask| is nonzero) or |b| (if |mask| is zero).
@@ -271,6 +269,26 @@ static inline crypto_word constant_time_select_w(crypto_word mask,
                                                    crypto_word b) {
   return (mask & a) | (~mask & b);
 }
+
+#if defined(BORINGSSL_CONSTANT_TIME_VALIDATION)
+
+// CONSTTIME_SECRET takes a pointer and a number of bytes and marks that region
+// of memory as secret. Secret data is tracked as it flows to registers and
+// other parts of a memory. If secret data is used as a condition for a branch,
+// or as a memory index, it will trigger warnings in valgrind.
+#define CONSTTIME_SECRET(x, y) VALGRIND_MAKE_MEM_UNDEFINED(x, y)
+
+// CONSTTIME_DECLASSIFY takes a pointer and a number of bytes and marks that
+// region of memory as public. Public data is not subject to constant-time
+// rules.
+#define CONSTTIME_DECLASSIFY(x, y) VALGRIND_MAKE_MEM_DEFINED(x, y)
+
+#else
+
+#define CONSTTIME_SECRET(x, y)
+#define CONSTTIME_DECLASSIFY(x, y)
+
+#endif  // BORINGSSL_CONSTANT_TIME_VALIDATION
 
 // from_be_u32_ptr returns the 32-bit big-endian-encoded value at |data|.
 static inline uint32_t from_be_u32_ptr(const uint8_t *data) {
@@ -294,32 +312,6 @@ static inline uint32_t from_be_u32_ptr(const uint8_t *data) {
 #endif
 }
 
-
-// from_be_u64_ptr returns the 64-bit big-endian-encoded value at |data|.
-static inline uint64_t from_be_u64_ptr(const uint8_t *data) {
-#if defined(__clang__) || defined(_MSC_VER)
-  // XXX: Unlike GCC, Clang doesn't optimize compliant access to unaligned data
-  // well. See https://llvm.org/bugs/show_bug.cgi?id=20605,
-  // https://llvm.org/bugs/show_bug.cgi?id=17603,
-  // http://blog.regehr.org/archives/702, and
-  // http://blog.regehr.org/archives/1055. MSVC seems to have similar problems.
-  uint64_t value;
-  memcpy(&value, data, sizeof(value));
-#if OPENSSL_ENDIAN != OPENSSL_BIG_ENDIAN
-  value = bswap_u64(value);
-#endif
-  return value;
-#else
-  return ((uint64_t)data[0] << 56) |
-         ((uint64_t)data[1] << 48) |
-         ((uint64_t)data[2] << 40) |
-         ((uint64_t)data[3] << 32) |
-         ((uint64_t)data[4] << 24) |
-         ((uint64_t)data[5] << 16) |
-         ((uint64_t)data[6] << 8) |
-         ((uint64_t)data[7]);
-#endif
-}
 
 // to_be_u32_ptr writes the value |x| to the location |out| in big-endian
 // order.
@@ -375,10 +367,5 @@ static inline uint64_t from_be_u64(uint64_t x) {
 #endif
   return x;
 }
-
-
-#if defined(__cplusplus)
-}  // extern C
-#endif
 
 #endif  // OPENSSL_HEADER_CRYPTO_INTERNAL_H

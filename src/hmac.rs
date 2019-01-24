@@ -154,8 +154,7 @@
 //! [code for `ring::hkdf`]:
 //!     https://github.com/briansmith/ring/blob/master/src/hkdf.rs
 
-
-use {constant_time, digest, error, rand};
+use crate::{constant_time, digest, error, rand};
 
 /// An HMAC signature.
 ///
@@ -169,10 +168,17 @@ pub struct SigningKey {
     ctx_prototype: SigningContext,
 }
 
-derive_debug_via_self!(SigningKey, self.ctx_prototype.inner.algorithm());
+impl core::fmt::Debug for SigningKey {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> Result<(), core::fmt::Error> {
+        f.debug_struct("SigningKey")
+            .field("algorithm", self.digest_algorithm())
+            .finish()
+    }
+}
 
 impl AsRef<[u8]> for Signature {
-    #[inline] fn as_ref(&self) -> &[u8] { self.0.as_ref() }
+    #[inline]
+    fn as_ref(&self) -> &[u8] { self.0.as_ref() }
 }
 
 impl SigningKey {
@@ -180,9 +186,9 @@ impl SigningKey {
     /// random value generated from `rng`.
     ///
     /// The key will be `recommended_key_len(digest_alg)` bytes long.
-    pub fn generate(digest_alg: &'static digest::Algorithm,
-                    rng: &rand::SecureRandom)
-                    -> Result<SigningKey, error::Unspecified> {
+    pub fn generate(
+        digest_alg: &'static digest::Algorithm, rng: &rand::SecureRandom,
+    ) -> Result<SigningKey, error::Unspecified> {
         // XXX: There should probably be a `digest::MAX_CHAINING_LEN`, but for
         // now `digest::MAX_OUTPUT_LEN` is good enough.
         let mut key_bytes = [0u8; digest::MAX_OUTPUT_LEN];
@@ -199,9 +205,9 @@ impl SigningKey {
     /// serialized for later use, so `key_bytes` must be exactly
     /// `recommended_key_len(digest_alg)`. This serialized value can be
     /// deserialized with `SigningKey::new()`.
-    pub fn generate_serializable(digest_alg: &'static digest::Algorithm,
-                                 rng: &rand::SecureRandom, key_bytes: &mut [u8])
-                    -> Result<SigningKey, error::Unspecified> {
+    pub fn generate_serializable(
+        digest_alg: &'static digest::Algorithm, rng: &rand::SecureRandom, key_bytes: &mut [u8],
+    ) -> Result<SigningKey, error::Unspecified> {
         if key_bytes.len() != recommended_key_len(digest_alg) {
             return Err(error::Unspecified);
         }
@@ -228,8 +234,7 @@ impl SigningKey {
     /// the truncation described above reduces their strength to only
     /// `digest_alg.output_len * 8` bits. Support for such keys is likely to be
     /// removed in a future version of *ring*.
-    pub fn new(digest_alg: &'static digest::Algorithm, key_value: &[u8])
-               -> SigningKey {
+    pub fn new(digest_alg: &'static digest::Algorithm, key_value: &[u8]) -> SigningKey {
         let mut key = SigningKey {
             ctx_prototype: SigningContext {
                 inner: digest::Context::new(digest_alg),
@@ -272,21 +277,23 @@ impl SigningKey {
 /// A context for multi-step (Init-Update-Finish) HMAC signing.
 ///
 /// Use `sign` for single-step HMAC signing.
-///
-/// C analog: `HMAC_CTX`.
 #[derive(Clone)]
 pub struct SigningContext {
     inner: digest::Context,
     outer: digest::Context,
 }
 
-derive_debug_via_self!(SigningContext, self.inner.algorithm());
+impl core::fmt::Debug for SigningContext {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> Result<(), core::fmt::Error> {
+        f.debug_struct("SigningContext")
+            .field("algorithm", self.inner.algorithm())
+            .finish()
+    }
+}
 
 impl SigningContext {
     /// Constructs a new HMAC signing context using the given digest algorithm
     /// and key.
-    ///
-    /// C analog: `HMAC_CTX_init`
     pub fn with_key(signing_key: &SigningKey) -> SigningContext {
         SigningContext {
             inner: signing_key.ctx_prototype.inner.clone(),
@@ -296,8 +303,6 @@ impl SigningContext {
 
     /// Updates the HMAC with all the data in `data`. `update` may be called
     /// zero or more times until `finish` is called.
-    ///
-    /// C analog: `HMAC_Update`
     pub fn update(&mut self, data: &[u8]) { self.inner.update(data); }
 
     /// Finalizes the HMAC calculation and returns the HMAC value. `sign`
@@ -307,8 +312,6 @@ impl SigningContext {
     /// It is generally not safe to implement HMAC verification by comparing
     // the return value of `sign` to a signature. Use `verify` for verification
     // instead.
-    ///
-    /// C analog: `HMAC_Final`
     pub fn sign(mut self) -> Signature {
         self.outer.update(self.inner.finish().as_ref());
         Signature(self.outer.finish())
@@ -323,8 +326,6 @@ impl SigningContext {
 /// It is generally not safe to implement HMAC verification by comparing the
 /// return value of `sign` to a signature. Use `verify` for verification
 /// instead.
-///
-/// C analog: `HMAC_CTX_init` + `HMAC_Update` + `HMAC_Final`.
 pub fn sign(key: &SigningKey, data: &[u8]) -> Signature {
     let mut ctx = SigningContext::with_key(key);
     ctx.update(data);
@@ -334,6 +335,14 @@ pub fn sign(key: &SigningKey, data: &[u8]) -> Signature {
 /// A key to use for HMAC authentication.
 pub struct VerificationKey {
     wrapped: SigningKey,
+}
+
+impl core::fmt::Debug for VerificationKey {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> Result<(), core::fmt::Error> {
+        f.debug_struct("VerificationKey")
+            .field("algorithm", self.digest_algorithm())
+            .finish()
+    }
 }
 
 impl VerificationKey {
@@ -346,27 +355,25 @@ impl VerificationKey {
     /// it will be padded with zeros. Similarly, if it is longer than the block
     /// length then it will be compressed using the digest algorithm.
     #[inline(always)]
-    pub fn new(digest_alg: &'static digest::Algorithm, key_value: &[u8])
-               -> VerificationKey {
-        VerificationKey { wrapped: SigningKey::new(digest_alg, key_value) }
+    pub fn new(digest_alg: &'static digest::Algorithm, key_value: &[u8]) -> VerificationKey {
+        VerificationKey {
+            wrapped: SigningKey::new(digest_alg, key_value),
+        }
     }
 
     /// The digest algorithm for the key.
     #[inline]
-    pub fn digest_algorithm(&self) -> &'static digest::Algorithm {
-        self.wrapped.digest_algorithm()
-    }
+    pub fn digest_algorithm(&self) -> &'static digest::Algorithm { self.wrapped.digest_algorithm() }
 }
 
 /// Calculates the HMAC of `data` using the key `key`, and verifies whether the
 /// resultant value equals `signature`, in one step.
 ///
 /// The verification will be done in constant time to prevent timing attacks.
-///
-/// C analog: `HMAC_Init` + `HMAC_Update` + `HMAC_Final` + `CRYPTO_memcmp`
 #[inline(always)]
-pub fn verify(key: &VerificationKey, data: &[u8], signature: &[u8])
-              -> Result<(), error::Unspecified> {
+pub fn verify(
+    key: &VerificationKey, data: &[u8], signature: &[u8],
+) -> Result<(), error::Unspecified> {
     verify_with_own_key(&key.wrapped, data, signature)
 }
 
@@ -377,10 +384,9 @@ pub fn verify(key: &VerificationKey, data: &[u8], signature: &[u8])
 /// `VerificationKey` with the same value as `key` and then using `verify`.
 ///
 /// The verification will be done in constant time to prevent timing attacks.
-///
-/// C analog: `HMAC_Init` + `HMAC_Update` + `HMAC_Final` + `CRYPTO_memcmp`
-pub fn verify_with_own_key(key: &SigningKey, data: &[u8], signature: &[u8])
-                           -> Result<(), error::Unspecified> {
+pub fn verify_with_own_key(
+    key: &SigningKey, data: &[u8], signature: &[u8],
+) -> Result<(), error::Unspecified> {
     constant_time::verify_slices_are_equal(sign(key, data).as_ref(), signature)
 }
 
@@ -402,14 +408,11 @@ pub fn verify_with_own_key(key: &SigningKey, data: &[u8], signature: &[u8])
 /// [RFC 5246, Appendix C]:
 ///     https://tools.ietf.org/html/rfc5246#appendix-C
 #[inline]
-pub fn recommended_key_len(digest_alg: &digest::Algorithm) -> usize {
-    digest_alg.chaining_len
-}
-
+pub fn recommended_key_len(digest_alg: &digest::Algorithm) -> usize { digest_alg.chaining_len }
 
 #[cfg(test)]
 mod tests {
-    use {digest, hmac, rand, test};
+    use crate::{digest, hmac, rand, test};
 
     // Make sure that `SigningKey::generate` and `verify_with_own_key` aren't
     // completely wacky.
@@ -417,30 +420,32 @@ mod tests {
     pub fn hmac_signing_key_coverage() {
         let mut rng = rand::SystemRandom::new();
 
-        const HELLO_WORLD_GOOD: &'static [u8] = b"hello, world";
-        const HELLO_WORLD_BAD: &'static [u8] = b"hello, worle";
+        const HELLO_WORLD_GOOD: &[u8] = b"hello, world";
+        const HELLO_WORLD_BAD: &[u8] = b"hello, worle";
 
         for d in &digest::test_util::ALL_ALGORITHMS {
             {
                 let key = hmac::SigningKey::generate(d, &mut rng).unwrap();
                 let signature = hmac::sign(&key, HELLO_WORLD_GOOD);
-                assert!(hmac::verify_with_own_key(&key, HELLO_WORLD_GOOD,
-                                                  signature.as_ref()).is_ok());
-                assert!(hmac::verify_with_own_key(&key, HELLO_WORLD_BAD,
-                                                  signature.as_ref()).is_err())
+                assert!(
+                    hmac::verify_with_own_key(&key, HELLO_WORLD_GOOD, signature.as_ref()).is_ok()
+                );
+                assert!(
+                    hmac::verify_with_own_key(&key, HELLO_WORLD_BAD, signature.as_ref()).is_err()
+                )
             }
 
             {
                 let mut key_bytes = vec![0; d.chaining_len];
                 let key =
-                    hmac::SigningKey::generate_serializable(d, &mut rng,
-                                                            &mut key_bytes)
-                            .unwrap();
+                    hmac::SigningKey::generate_serializable(d, &mut rng, &mut key_bytes).unwrap();
                 let signature = hmac::sign(&key, HELLO_WORLD_GOOD);
-                assert!(hmac::verify_with_own_key(&key, HELLO_WORLD_GOOD,
-                                                  signature.as_ref()).is_ok());
-                assert!(hmac::verify_with_own_key(&key, HELLO_WORLD_BAD,
-                                                  signature.as_ref()).is_err())
+                assert!(
+                    hmac::verify_with_own_key(&key, HELLO_WORLD_GOOD, signature.as_ref()).is_ok()
+                );
+                assert!(
+                    hmac::verify_with_own_key(&key, HELLO_WORLD_BAD, signature.as_ref()).is_err()
+                )
             }
 
             // Attempt with a `key_bytes` parameter that wrongly uses the
@@ -448,25 +453,25 @@ mod tests {
             // values differ.
             if d.chaining_len != d.output_len {
                 let mut key_bytes = vec![0; d.output_len];
-                assert!(hmac::SigningKey::generate_serializable(d, &mut rng,
-                                                                &mut key_bytes)
-                            .is_err());
+                assert!(
+                    hmac::SigningKey::generate_serializable(d, &mut rng, &mut key_bytes).is_err()
+                );
             }
 
             // Attempt with a too-small `key_bytes`.
             {
                 let mut key_bytes = vec![0; d.chaining_len - 1];
-                assert!(hmac::SigningKey::generate_serializable(d, &mut rng,
-                                                                &mut key_bytes)
-                            .is_err());
+                assert!(
+                    hmac::SigningKey::generate_serializable(d, &mut rng, &mut key_bytes).is_err()
+                );
             }
 
             // Attempt with a too-large `key_bytes`.
             {
                 let mut key_bytes = vec![0; d.chaining_len + 1];
-                assert!(hmac::SigningKey::generate_serializable(d, &mut rng,
-                                                                &mut key_bytes)
-                            .is_err());
+                assert!(
+                    hmac::SigningKey::generate_serializable(d, &mut rng, &mut key_bytes).is_err()
+                );
             }
         }
     }
@@ -475,19 +480,24 @@ mod tests {
     // that the generated key fills the entire `key_bytes` parameter.
     #[test]
     pub fn generate_serializable_tests() {
-        test::from_file("src/hmac_generate_serializable_tests.txt",
-                        |section, test_case| {
-            assert_eq!(section, "");
-            let digest_alg = test_case.consume_digest_alg("HMAC").unwrap();
-            let key_value_in = test_case.consume_bytes("Key");
+        test::from_file(
+            "src/hmac_generate_serializable_tests.txt",
+            |section, test_case| {
+                assert_eq!(section, "");
+                let digest_alg = test_case.consume_digest_alg("HMAC").unwrap();
+                let key_value_in = test_case.consume_bytes("Key");
 
-            let rng = test::rand::FixedSliceRandom { bytes: &key_value_in };
-            let mut key_value_out = vec![0; digest_alg.chaining_len];
-            let _ = hmac::SigningKey::generate_serializable(
-                    digest_alg, &rng, &mut key_value_out).unwrap();
-            assert_eq!(&key_value_in, &key_value_out);
+                let rng = test::rand::FixedSliceRandom {
+                    bytes: &key_value_in,
+                };
+                let mut key_value_out = vec![0; digest_alg.chaining_len];
+                let _ =
+                    hmac::SigningKey::generate_serializable(digest_alg, &rng, &mut key_value_out)
+                        .unwrap();
+                assert_eq!(&key_value_in, &key_value_out);
 
-            Ok(())
-        })
+                Ok(())
+            },
+        )
     }
 }

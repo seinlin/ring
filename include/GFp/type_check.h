@@ -60,11 +60,15 @@
 #include <GFp/base.h>
 
 
-#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
-#define OPENSSL_COMPILE_ASSERT(cond, msg) _Static_assert(cond, #msg)
+#if defined(__cplusplus) || (defined(_MSC_VER) && !defined(__clang__))
+// In C++ and non-clang MSVC, |static_assert| is a keyword.
+#define OPENSSL_STATIC_ASSERT(cond, msg) static_assert(cond, msg)
 #else
-#define OPENSSL_COMPILE_ASSERT(cond, msg) \
-  typedef char OPENSSL_COMPILE_ASSERT_##msg[((cond) ? 1 : -1)] OPENSSL_UNUSED
+// C11 defines the |_Static_assert| keyword and the |static_assert| macro in
+// assert.h. While the former is available at all versions in Clang and GCC, the
+// later depends on libc and, in glibc, depends on being built in C11 mode. We
+// do not require this, for now, so use |_Static_assert| directly.
+#define OPENSSL_STATIC_ASSERT(cond, msg) _Static_assert(cond, msg)
 #endif
 
 

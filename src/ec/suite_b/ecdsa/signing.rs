@@ -14,13 +14,20 @@
 
 //! ECDSA Signatures using the P-256 and P-384 curves.
 
-use arithmetic::montgomery::*;
-use core;
-use {der, digest, ec, error, pkcs8, rand, signature, signature_impl};
 use super::digest_scalar::digest_scalar;
-use ec::suite_b::{ops::*, private_key};
+use crate::{
+    arithmetic::montgomery::*,
+    digest,
+    ec::{
+        self,
+        suite_b::{ops::*, private_key},
+    },
+    error,
+    io::der,
+    limb, pkcs8, rand, sealed, signature,
+};
+use core;
 use untrusted;
-use private;
 
 /// An ECDSA signing algorithm.
 pub struct Algorithm {
@@ -30,8 +37,7 @@ pub struct Algorithm {
     digest_alg: &'static digest::Algorithm,
     pkcs8_template: &'static pkcs8::Template,
     format_rs:
-        for <'a> fn(ops: &'static ScalarOps, r: &Scalar, s: &Scalar,
-                    out: &'a mut [u8]) -> &'a [u8],
+        for<'a> fn(ops: &'static ScalarOps, r: &Scalar, s: &Scalar, out: &'a mut [u8]) -> usize,
     id: AlgorithmID,
 }
 
@@ -43,7 +49,7 @@ enum AlgorithmID {
     ECDSA_P384_SHA384_ASN1_SIGNING,
 }
 
-derive_debug_via_self!(Algorithm, self.id);
+derive_debug_via_id!(Algorithm);
 
 impl PartialEq for Algorithm {
     fn eq(&self, other: &Self) -> bool { self.id == other.id }
@@ -51,25 +57,18 @@ impl PartialEq for Algorithm {
 
 impl Eq for Algorithm {}
 
-impl private::Sealed for Algorithm {}
-
-#[cfg(feature = "use_heap")]
-impl signature::SigningAlgorithm for Algorithm {
-    fn from_pkcs8(&'static self, input: untrusted::Input)
-                  -> Result<signature::KeyPair, error::Unspecified> {
-        Key::from_pkcs8(self, input).map(signature::KeyPair::new)
-    }
-}
+impl sealed::Sealed for Algorithm {}
 
 /// An ECDSA key pair, used for signing.
-pub struct Key {
+pub struct KeyPair {
     d: Scalar<R>,
     alg: &'static Algorithm,
+    public_key: PublicKey,
 }
 
-derive_debug_via_self!(Key, self.alg);
+derive_debug_via_field!(KeyPair, stringify!(EcdsaKeyPair), public_key);
 
-impl<'a> Key {
+impl KeyPair {
     /// Generates a new key pair and returns the key pair serialized as a
     /// PKCS#8 document.
     ///
@@ -81,14 +80,16 @@ impl<'a> Key {
     ///
     /// [RFC 5915]: https://tools.ietf.org/html/rfc5915
     /// [RFC 5958 Section 2]: https://tools.ietf.org/html/rfc5958#section-2
-    pub fn generate_pkcs8(alg: &'static Algorithm, rng: &rand::SecureRandom)
-                          -> Result<pkcs8::Document, error::Unspecified> {
-        let private_key = ec::PrivateKey::generate(alg.curve, rng)?;
-        let mut public_key_bytes = [0; ec::PUBLIC_KEY_MAX_LEN];
-        let public_key_bytes = &mut public_key_bytes[..alg.curve.public_key_len];
-        (alg.curve.public_from_private)(public_key_bytes, &private_key)?;
-        Ok(pkcs8::wrap_key(&alg.pkcs8_template, private_key.bytes(alg.curve),
-                           public_key_bytes))
+    pub fn generate_pkcs8(
+        alg: &'static Algorithm, rng: &rand::SecureRandom,
+    ) -> Result<pkcs8::Document, error::Unspecified> {
+        let private_key = ec::Seed::generate(alg.curve, rng)?;
+        let public_key = private_key.compute_public_key()?;
+        Ok(pkcs8::wrap_key(
+            &alg.pkcs8_template,
+            private_key.bytes_less_safe(),
+            public_key.as_ref(),
+        ))
     }
 
     /// Constructs an ECDSA key pair by parsing an unencrypted PKCS#8 v1
@@ -101,10 +102,10 @@ impl<'a> Key {
     /// "explicit" encoding of the curve. The `parameters` field of the
     /// `ECPrivateKey`, if present, must be the same named curve that is in the
     /// algorithm identifier in the PKCS#8 header.
-    pub fn from_pkcs8(alg: &'static Algorithm, input: untrusted::Input)
-                      -> Result<Self, error::Unspecified> {
-        let key_pair = ec::suite_b::key_pair_from_pkcs8(alg.curve,
-            alg.pkcs8_template, input)?;
+    pub fn from_pkcs8(
+        alg: &'static Algorithm, input: untrusted::Input,
+    ) -> Result<Self, error::KeyRejected> {
+        let key_pair = ec::suite_b::key_pair_from_pkcs8(alg.curve, alg.pkcs8_template, input)?;
         Ok(Self::new(alg, key_pair))
     }
 
@@ -112,38 +113,45 @@ impl<'a> Key {
     /// private key and public key bytes.
     ///
     /// This is intended for use by code that deserializes key pairs. It is
-    /// recommended to use `ECDSAKeyPair::from_pkcs8()` (with a PKCS#8-encoded
+    /// recommended to use `RsaPubeyPair::from_pkcs8()` (with a PKCS#8-encoded
     /// key) instead.
-    pub fn from_private_key_and_public_key(alg: &'static Algorithm,
-                                           private_key: untrusted::Input,
-                                           public_key: untrusted::Input)
-                                           -> Result<Self, error::Unspecified> {
-        let key_pair = ec::suite_b::key_pair_from_bytes(
-            alg.curve, private_key, public_key)?;
+    pub fn from_private_key_and_public_key(
+        alg: &'static Algorithm, private_key: untrusted::Input, public_key: untrusted::Input,
+    ) -> Result<Self, error::KeyRejected> {
+        let key_pair = ec::suite_b::key_pair_from_bytes(alg.curve, private_key, public_key)?;
         Ok(Self::new(alg, key_pair))
     }
 
     fn new(alg: &'static Algorithm, key_pair: ec::KeyPair) -> Self {
-        let d = private_key::private_key_as_scalar(
-            alg.private_key_ops, &key_pair.private_key);
-        let d = alg.private_scalar_ops.scalar_ops.scalar_product(
-            &d, &alg.private_scalar_ops.oneRR_mod_n);
+        let (seed, public_key) = key_pair.split();
+        let d = private_key::private_key_as_scalar(alg.private_key_ops, &seed);
+        let d = alg
+            .private_scalar_ops
+            .scalar_ops
+            .scalar_product(&d, &alg.private_scalar_ops.oneRR_mod_n);
 
-        Self { d, alg }
+        Self {
+            d,
+            alg,
+            public_key: PublicKey(public_key),
+        }
     }
 
-    /// Deprecated.
-    pub fn sign(&self, msg: untrusted::Input, rng: &rand::SecureRandom)
-        -> Result<signature::Signature, error::Unspecified> {
+    /// Returns the signature of the message `msg` using a random nonce
+    /// generated by `rng`.
+    pub fn sign(
+        &self, rng: &rand::SecureRandom, msg: untrusted::Input,
+    ) -> Result<signature::Signature, error::Unspecified> {
         // Step 4 (out of order).
         let h = digest::digest(self.alg.digest_alg, msg.as_slice_less_safe());
-        self.sign_(&h, rng)
+        self.sign_(rng, h)
     }
 
     /// Returns the signature of message digest `h` using a "random" nonce
     /// generated by `rng`.
-    fn sign_(&self, h: &digest::Digest, rng: &rand::SecureRandom)
-             -> Result<signature::Signature, error::Unspecified> {
+    fn sign_(
+        &self, rng: &rand::SecureRandom, h: digest::Digest,
+    ) -> Result<signature::Signature, error::Unspecified> {
         // NSA Suite B Implementer's Guide to ECDSA Section 3.4.1: ECDSA
         // Signature Generation.
 
@@ -162,10 +170,10 @@ impl<'a> Key {
         //        private key d (see [SP800-89] Section 6).
         //
         // The domain parameters are hard-coded into the source code.
-        // `ECDSAKeyPair::generate_pkcs8()` can be used to meet the second
+        // `EcdsaKeyPair::generate_pkcs8()` can be used to meet the second
         // requirement; otherwise, it is up to the user to ensure the key pair
         // was obtained from a trusted private key. The constructors for
-        // `ECDSAKeyPair` ensure that #3 and #4 are met subject to the caveats
+        // `EcdsaKeyPair` ensure that #3 and #4 are met subject to the caveats
         // in SP800-89 Section 6.
 
         let ops = self.alg.private_scalar_ops;
@@ -173,7 +181,8 @@ impl<'a> Key {
         let cops = scalar_ops.common;
         let private_key_ops = self.alg.private_key_ops;
 
-        for _ in 0..100 { // XXX: iteration conut?
+        for _ in 0..100 {
+            // XXX: iteration conut?
             // Step 1.
             let k = private_key::random_scalar(self.alg.private_key_ops, rng)?;
             let k_inv = scalar_ops.scalar_inv_to_mont(&k);
@@ -207,46 +216,51 @@ impl<'a> Key {
             }
 
             // Step 7 with encoding.
-            let mut sig_bytes = [0; signature_impl::MAX_LEN];
-            let sig =
-                (self.alg.format_rs)(scalar_ops, &r, &s, &mut sig_bytes[..]);
-            return Ok(signature_impl::signature_from_bytes(sig))
+            return Ok(signature::Signature::new(|sig_bytes| {
+                (self.alg.format_rs)(scalar_ops, &r, &s, sig_bytes)
+            }));
         }
 
         Err(error::Unspecified)
     }
 }
 
-#[cfg(feature = "use_heap")]
-impl signature::KeyPairImpl for Key {
-    /// Returns the signature of the message `msg`.
-    fn sign(&self, rng: &rand::SecureRandom, msg: untrusted::Input)
-            -> Result<signature::Signature, error::Unspecified>
-    {
-        Key::sign(self, msg, rng)
-    }
+impl signature::KeyPair for KeyPair {
+    type PublicKey = PublicKey;
+
+    fn public_key(&self) -> &Self::PublicKey { &self.public_key }
 }
 
-fn format_rs_fixed<'a>(ops: &'static ScalarOps, r: &Scalar, s: &Scalar,
-                       out: &'a mut [u8]) -> &'a [u8] {
+#[derive(Clone, Copy)]
+pub struct PublicKey(ec::PublicKey);
+
+derive_debug_self_as_ref_hex_bytes!(PublicKey);
+
+impl AsRef<[u8]> for PublicKey {
+    fn as_ref(&self) -> &[u8] { self.0.as_ref() }
+}
+
+fn format_rs_fixed<'a>(
+    ops: &'static ScalarOps, r: &Scalar, s: &Scalar, out: &'a mut [u8],
+) -> usize {
     let scalar_len = ops.scalar_bytes_len();
-    {
-        let (r_out, rest) = out.split_at_mut(scalar_len);
-        big_endian_from_limbs(&r.limbs[..ops.common.num_limbs], r_out);
-        let (s_out, _) = rest.split_at_mut(scalar_len);
-        big_endian_from_limbs(&s.limbs[..ops.common.num_limbs], s_out);
-    }
-    &out[..(2 * scalar_len)]
+
+    let (r_out, rest) = out.split_at_mut(scalar_len);
+    limb::big_endian_from_limbs(&r.limbs[..ops.common.num_limbs], r_out);
+
+    let (s_out, _) = rest.split_at_mut(scalar_len);
+    limb::big_endian_from_limbs(&s.limbs[..ops.common.num_limbs], s_out);
+
+    2 * scalar_len
 }
 
-fn format_rs_asn1<'a>(ops: &'static ScalarOps, r: &Scalar, s: &Scalar,
-                      out: &'a mut [u8]) -> &'a [u8] {
+fn format_rs_asn1<'a>(ops: &'static ScalarOps, r: &Scalar, s: &Scalar, out: &'a mut [u8]) -> usize {
     // This assumes `a` is not zero since neither `r` or `s` is allowed to be
     // zero.
     fn format_integer_tlv(ops: &ScalarOps, a: &Scalar, out: &mut [u8]) -> usize {
         let mut fixed = [0u8; ec::SCALAR_MAX_BYTES + 1];
         let fixed = &mut fixed[..(ops.scalar_bytes_len() + 1)];
-        big_endian_from_limbs(&a.limbs[..ops.common.num_limbs], &mut fixed[1..]);
+        limb::big_endian_from_limbs(&a.limbs[..ops.common.num_limbs], &mut fixed[1..]);
 
         // Since `a_fixed_out` is an extra byte long, it is guaranteed to start
         // with a zero.
@@ -283,7 +297,7 @@ fn format_rs_asn1<'a>(ops: &'static ScalarOps, r: &Scalar, s: &Scalar,
     assert!(value_len < 128);
     out[1] = value_len as u8;
 
-    &out[..(2 + value_len)]
+    2 + value_len
 }
 
 /// Signing of fixed-length (PKCS#11 style) ECDSA signatures using the
@@ -347,7 +361,7 @@ pub static ECDSA_P384_SHA384_ASN1_SIGNING: Algorithm = Algorithm {
 };
 
 static EC_PUBLIC_KEY_P256_PKCS8_V1_TEMPLATE: pkcs8::Template = pkcs8::Template {
-    bytes: include_bytes ! ("ecPublicKey_p256_pkcs8_v1_template.der"),
+    bytes: include_bytes!("ecPublicKey_p256_pkcs8_v1_template.der"),
     alg_id_range: core::ops::Range { start: 8, end: 27 },
     curve_id_index: 9,
     private_key_index: 0x24,
@@ -362,94 +376,94 @@ static EC_PUBLIC_KEY_P384_PKCS8_V1_TEMPLATE: pkcs8::Template = pkcs8::Template {
 
 #[cfg(test)]
 mod tests {
-    use {signature, test};
+    use crate::{signature, test};
     use untrusted;
 
     #[test]
     fn signature_ecdsa_sign_fixed_test() {
-        test::from_file("src/ec/suite_b/ecdsa/ecdsa_sign_fixed_tests.txt",
-                        |section, test_case| {
-            assert_eq!(section, "");
+        test::from_file(
+            "src/ec/suite_b/ecdsa/ecdsa_sign_fixed_tests.txt",
+            |section, test_case| {
+                assert_eq!(section, "");
 
-            let curve_name = test_case.consume_string("Curve");
-            let digest_name = test_case.consume_string("Digest");
+                let curve_name = test_case.consume_string("Curve");
+                let digest_name = test_case.consume_string("Digest");
 
-            let msg = test_case.consume_bytes("Msg");
-            let msg = untrusted::Input::from(&msg);
+                let msg = test_case.consume_bytes("Msg");
+                let msg = untrusted::Input::from(&msg);
 
-            let d = test_case.consume_bytes("d");
-            let d = untrusted::Input::from(&d);
+                let d = test_case.consume_bytes("d");
+                let d = untrusted::Input::from(&d);
 
-            let q = test_case.consume_bytes("Q");
-            let q = untrusted::Input::from(&q);
+                let q = test_case.consume_bytes("Q");
+                let q = untrusted::Input::from(&q);
 
-            let k = test_case.consume_bytes("k");
+                let k = test_case.consume_bytes("k");
 
-            let expected_result = test_case.consume_bytes("Sig");
+                let expected_result = test_case.consume_bytes("Sig");
 
-            let alg = match (curve_name.as_str(), digest_name.as_str()) {
-                ("P-256", "SHA256") => &signature::ECDSA_P256_SHA256_FIXED_SIGNING,
-                ("P-384", "SHA384") => &signature::ECDSA_P384_SHA384_FIXED_SIGNING,
-                _ => {
-                    panic!("Unsupported curve+digest: {}+{}", curve_name,
-                           digest_name);
-                }
-            };
+                let alg = match (curve_name.as_str(), digest_name.as_str()) {
+                    ("P-256", "SHA256") => &signature::ECDSA_P256_SHA256_FIXED_SIGNING,
+                    ("P-384", "SHA384") => &signature::ECDSA_P384_SHA384_FIXED_SIGNING,
+                    _ => {
+                        panic!("Unsupported curve+digest: {}+{}", curve_name, digest_name);
+                    },
+                };
 
-            let private_key =
-                signature::ECDSAKeyPair::
-                    from_private_key_and_public_key(alg, d, q).unwrap();
-            let rng = test::rand::FixedSliceRandom { bytes: &k };
+                let private_key =
+                    signature::EcdsaKeyPair::from_private_key_and_public_key(alg, d, q).unwrap();
+                let rng = test::rand::FixedSliceRandom { bytes: &k };
 
-            let actual_result = private_key.sign(msg, &rng).unwrap();
+                let actual_result = private_key.sign(&rng, msg).unwrap();
 
-            assert_eq!(actual_result.as_ref(), &expected_result[..]);
+                assert_eq!(actual_result.as_ref(), &expected_result[..]);
 
-            Ok(())
-        });
+                Ok(())
+            },
+        );
     }
 
     #[test]
     fn signature_ecdsa_sign_asn1_test() {
-        test::from_file("src/ec/suite_b/ecdsa/ecdsa_sign_asn1_tests.txt",
-                        |section, test_case| {
-            assert_eq!(section, "");
+        test::from_file(
+            "src/ec/suite_b/ecdsa/ecdsa_sign_asn1_tests.txt",
+            |section, test_case| {
+                assert_eq!(section, "");
 
-            let curve_name = test_case.consume_string("Curve");
-            let digest_name = test_case.consume_string("Digest");
+                let curve_name = test_case.consume_string("Curve");
+                let digest_name = test_case.consume_string("Digest");
 
-            let msg = test_case.consume_bytes("Msg");
-            let msg = untrusted::Input::from(&msg);
+                let msg = test_case.consume_bytes("Msg");
+                let msg = untrusted::Input::from(&msg);
 
-            let d = test_case.consume_bytes("d");
-            let d = untrusted::Input::from(&d);
+                let d = test_case.consume_bytes("d");
+                let d = untrusted::Input::from(&d);
 
-            let q = test_case.consume_bytes("Q");
-            let q = untrusted::Input::from(&q);
+                let q = test_case.consume_bytes("Q");
+                let q = untrusted::Input::from(&q);
 
-            let k = test_case.consume_bytes("k");
+                let k = test_case.consume_bytes("k");
 
-            let expected_result = test_case.consume_bytes("Sig");
+                let expected_result = test_case.consume_bytes("Sig");
 
-            let alg = match (curve_name.as_str(), digest_name.as_str()) {
-                ("P-256", "SHA256") => &signature::ECDSA_P256_SHA256_ASN1_SIGNING,
-                ("P-384", "SHA384") => &signature::ECDSA_P384_SHA384_ASN1_SIGNING,
-                _ => {
-                    panic!("Unsupported curve+digest: {}+{}", curve_name,
-                           digest_name);
-                }
-            };
+                let alg = match (curve_name.as_str(), digest_name.as_str()) {
+                    ("P-256", "SHA256") => &signature::ECDSA_P256_SHA256_ASN1_SIGNING,
+                    ("P-384", "SHA384") => &signature::ECDSA_P384_SHA384_ASN1_SIGNING,
+                    _ => {
+                        panic!("Unsupported curve+digest: {}+{}", curve_name, digest_name);
+                    },
+                };
 
-            let private_key =
-                signature::ECDSAKeyPair::
-                    from_private_key_and_public_key(alg, d, q).unwrap();
-            let rng = test::rand::FixedSliceRandom { bytes: &k };
+                let private_key =
+                    signature::EcdsaKeyPair::from_private_key_and_public_key(alg, d, q).unwrap();
+                let rng = test::rand::FixedSliceRandom { bytes: &k };
 
-            let actual_result = private_key.sign(msg, &rng).unwrap();
+                let actual_result = private_key.sign(&rng, msg).unwrap();
 
-            assert_eq!(actual_result.as_ref(), &expected_result[..]);
+                assert_eq!(actual_result.as_ref(), &expected_result[..]);
 
-            Ok(())
-        });
+                Ok(())
+            },
+        );
     }
 }

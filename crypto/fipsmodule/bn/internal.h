@@ -134,10 +134,6 @@
 
 #include "../../internal.h"
 
-#if defined(__cplusplus)
-extern "C" {
-#endif
-
 typedef crypto_word BN_ULONG;
 
 #if defined(OPENSSL_64_BIT)
@@ -188,12 +184,11 @@ BN_ULONG GFp_bn_mul_add_words(BN_ULONG *rp, const BN_ULONG *ap, size_t num,
 // implicitly treated as a |size_t|; when |int| is smaller than |size_t|
 // then the |movq 48(%rsp),%r9| done by x86_64-xlate.pl implicitly does the
 // conversion.
-OPENSSL_COMPILE_ASSERT(sizeof(int) == sizeof(size_t) ||
-                       (sizeof(int) == 4 && sizeof(size_t) == 8),
-                       int_and_size_t_abi_mismatch);
+OPENSSL_STATIC_ASSERT(sizeof(int) == sizeof(size_t) ||
+                      (sizeof(int) == 4 && sizeof(size_t) == 8),
+                      "int and size_t ABI mismatch");
 void GFp_bn_mul_mont(BN_ULONG *rp, const BN_ULONG *ap, const BN_ULONG *bp,
                      const BN_ULONG *np, const BN_ULONG *n0, size_t num);
-int GFp_bn_mul_mont_check_num_limbs(size_t top);
 
 static inline void bn_umult_lohi(BN_ULONG *low_out, BN_ULONG *high_out,
                                  BN_ULONG a, BN_ULONG b) {
@@ -205,14 +200,5 @@ static inline void bn_umult_lohi(BN_ULONG *low_out, BN_ULONG *high_out,
   *high_out = (BN_ULONG)(result >> BN_BITS2);
 #endif
 }
-
-// bn_is_bit_set_words returns one if bit |bit| is set in |a| and zero
-// otherwise.
-int GFp_bn_is_bit_set_words(const BN_ULONG *a, size_t num, unsigned bit);
-
-
-#if defined(__cplusplus)
-}  // extern C
-#endif
 
 #endif  // OPENSSL_HEADER_BN_INTERNAL_H

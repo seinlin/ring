@@ -27,7 +27,15 @@
 //
 // The field functions are shared by Ed25519 and X25519 where possible.
 
+#if defined(_MSC_VER)
+#pragma warning(push, 3)
+#endif
+
 #include <string.h>
+
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
 
 #include <GFp/cpu.h>
 #include <GFp/mem.h>
@@ -40,6 +48,11 @@
 #pragma warning(disable: 4242)
 // '=': conversion from 'int32_t' to 'uint8_t', possible loss of data
 #pragma warning(disable: 4244)
+#endif
+
+#if defined(__GNUC__)
+#pragma GCC diagnostic ignored "-Wconversion"
+#pragma GCC diagnostic ignored "-Wsign-conversion"
 #endif
 
 // Various pre-computed constants.
@@ -1398,8 +1411,8 @@ static void fe_copy(fe *h, const fe *f) {
 }
 
 static void fe_copy_lt(fe_loose *h, const fe *f) {
-  OPENSSL_COMPILE_ASSERT(sizeof(fe_loose) == sizeof(fe),
-                         fe_and_fe_loose_mismatch);
+  OPENSSL_STATIC_ASSERT(sizeof(fe_loose) == sizeof(fe),
+                        "fe and fe_loose mismatch");
   memmove(h, f, sizeof(fe));
 }
 #if !defined(OPENSSL_SMALL)

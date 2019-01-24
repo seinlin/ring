@@ -4,7 +4,7 @@
 // purpose with or without fee is hereby granted, provided that the above
 // copyright notice and this permission notice appear in all copies.
 //
-// THE SOFTWARE IS PROVIDED "AS IS" AND AND THE AUTHORS DISCLAIM ALL WARRANTIES
+// THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHORS DISCLAIM ALL WARRANTIES
 // WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
 // MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY
 // SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
@@ -127,10 +127,10 @@
 //! ## Signing and verifying with Ed25519
 //!
 //! ```
-//! extern crate ring;
-//! extern crate untrusted;
-//!
-//! use ring::{rand, signature};
+//! use ring::{
+//!     rand,
+//!     signature::{self, KeyPair},
+//! };
 //!
 //! # fn sign_and_verify_ed25519() -> Result<(), ring::error::Unspecified> {
 //! // Generate a key pair in PKCS#8 (v2) format.
@@ -141,17 +141,16 @@
 //! // it would read the PKCS#8 file from persistent storage to use it.
 //!
 //! let key_pair =
-//!    signature::Ed25519KeyPair::from_pkcs8(
-//!             untrusted::Input::from(&pkcs8_bytes))?;
+//!     signature::Ed25519KeyPair::from_pkcs8(untrusted::Input::from(pkcs8_bytes.as_ref()))?;
 //!
 //! // Sign the message "hello, world".
-//! const MESSAGE: &'static [u8] = b"hello, world";
+//! const MESSAGE: &[u8] = b"hello, world";
 //! let sig = key_pair.sign(MESSAGE);
 //!
 //! // Normally an application would extract the bytes of the signature and
 //! // send them in a protocol message to the peer(s). Here we just get the
 //! // public key key directly from the key pair.
-//! let peer_public_key_bytes = key_pair.public_key_bytes();
+//! let peer_public_key_bytes = key_pair.public_key().as_ref();
 //! let sig_bytes = sig.as_ref();
 //!
 //! // Verify the signature of the message using the public key. Normally the
@@ -170,9 +169,6 @@
 //! ```
 //!
 //! ## Signing and verifying with RSA (PKCS#1 1.5 padding)
-//!
-//! RSA signing (but not verification) requires the `rsa_signing` feature to
-//! be enabled.
 //!
 //! By default OpenSSL writes RSA public keys in SubjectPublicKeyInfo format,
 //! not RSAPublicKey format, and Base64-encodes them (“PEM” format).
@@ -201,35 +197,26 @@
 //! ```
 //!
 //! ```
-//! extern crate ring;
-//! extern crate untrusted;
-//!
 //! use ring::{rand, signature};
 //!
-//! # #[cfg(all(feature = "rsa_signing", feature = "use_heap"))]
+//! # #[cfg(feature = "use_heap")]
 //! fn sign_and_verify_rsa(private_key_path: &std::path::Path,
 //!                        public_key_path: &std::path::Path)
 //!                        -> Result<(), MyError> {
-//! // Create an `RSAKeyPair` from the DER-encoded bytes. This example uses
+//! // Create an `RsaKeyPair` from the DER-encoded bytes. This example uses
 //! // a 2048-bit key, but larger keys are also supported.
 //! let private_key_der = read_file(private_key_path)?;
 //! let private_key_der = untrusted::Input::from(&private_key_der);
-//! let key_pair = signature::RSAKeyPair::from_der(private_key_der)
-//!     .map_err(|ring::error::Unspecified| MyError::BadPrivateKey)?;
-//!
-//! // Create a signing state.
-//! let key_pair = std::sync::Arc::new(key_pair);
-//! let mut signing_state = signature::RSASigningState::new(key_pair)
-//!     .map_err(|ring::error::Unspecified| MyError::OOM)?;
+//! let key_pair = signature::RsaKeyPair::from_der(private_key_der)
+//!     .map_err(|_| MyError::BadPrivateKey)?;
 //!
 //! // Sign the message "hello, world", using PKCS#1 v1.5 padding and the
 //! // SHA256 digest algorithm.
 //! const MESSAGE: &'static [u8] = b"hello, world";
 //! let rng = rand::SystemRandom::new();
-//! let mut signature = vec![0; signing_state.key_pair().public_modulus_len()];
-//! signing_state.sign(&signature::RSA_PKCS1_SHA256, &rng, MESSAGE,
-//!                    &mut signature)
-//!     .map_err(|ring::error::Unspecified| MyError::OOM)?;
+//! let mut signature = vec![0; key_pair.public_modulus_len()];
+//! key_pair.sign(&signature::RSA_PKCS1_SHA256, &rng, MESSAGE, &mut signature)
+//!     .map_err(|_| MyError::OOM)?;
 //!
 //! // Verify the signature.
 //! let public_key_der = read_file(public_key_path)?;
@@ -238,21 +225,21 @@
 //! let signature = untrusted::Input::from(&signature);
 //! signature::verify(&signature::RSA_PKCS1_2048_8192_SHA256,
 //!                   public_key_der, message, signature)
-//!     .map_err(|ring::error::Unspecified| MyError::BadSignature)?;
+//!     .map_err(|_| MyError::BadSignature)?;
 //!
 //! Ok(())
 //! }
 //!
 //! #[derive(Debug)]
 //! enum MyError {
-//! #  #[cfg(all(feature = "rsa_signing", feature = "use_heap"))]
+//! #  #[cfg(feature = "use_heap")]
 //!    IO(std::io::Error),
 //!    BadPrivateKey,
 //!    OOM,
 //!    BadSignature,
 //! }
 //!
-//! # #[cfg(all(feature = "rsa_signing", feature = "use_heap"))]
+//! # #[cfg(feature = "use_heap")]
 //! fn read_file(path: &std::path::Path) -> Result<Vec<u8>, MyError> {
 //!     use std::io::Read;
 //!
@@ -262,7 +249,7 @@
 //!     Ok(contents)
 //! }
 //! #
-//! # #[cfg(not(all(feature = "rsa_signing", feature = "use_heap")))]
+//! # #[cfg(not(feature = "use_heap"))]
 //! # fn sign_and_verify_rsa(_private_key_path: &std::path::Path,
 //! #                        _public_key_path: &std::path::Path)
 //! #                        -> Result<(), ()> {
@@ -278,46 +265,42 @@
 //! # }
 //! ```
 
-
+use crate::{cpu, ec, error, sealed};
 use core;
-use {error, init, private, rand};
 use untrusted;
 
-#[cfg(feature = "use_heap")]
-use std;
-
-pub use ec::suite_b::ecdsa::{
-    signing::{
-        Key as ECDSAKeyPair,
-        ECDSA_P256_SHA256_ASN1_SIGNING, ECDSA_P256_SHA256_FIXED_SIGNING,
-        ECDSA_P384_SHA384_ASN1_SIGNING, ECDSA_P384_SHA384_FIXED_SIGNING,
+pub use crate::ec::{
+    curve25519::ed25519::{
+        signing::KeyPair as Ed25519KeyPair,
+        verification::{EdDSAParameters, ED25519},
+        PUBLIC_KEY_LEN as ED25519_PUBLIC_KEY_LEN,
     },
+    suite_b::ecdsa::{
+        signing::{
+            Algorithm as EcdsaSigningAlgorithm, KeyPair as EcdsaKeyPair,
+            ECDSA_P256_SHA256_ASN1_SIGNING, ECDSA_P256_SHA256_FIXED_SIGNING,
+            ECDSA_P384_SHA384_ASN1_SIGNING, ECDSA_P384_SHA384_FIXED_SIGNING,
+        },
+        verification::{
+            Algorithm as EcdsaVerificationAlgorithm, ECDSA_P256_SHA256_ASN1,
+            ECDSA_P256_SHA256_FIXED, ECDSA_P256_SHA384_ASN1, ECDSA_P384_SHA256_ASN1,
+            ECDSA_P384_SHA384_ASN1, ECDSA_P384_SHA384_FIXED,
+        },
+    },
+};
+
+#[cfg(feature = "use_heap")]
+pub use crate::rsa::{
+    signing::KeyPair as RsaKeyPair,
 
     verification::{
-        Algorithm as ECDSAVerification,
-        ECDSA_P256_SHA256_ASN1, ECDSA_P256_SHA256_FIXED,
-        ECDSA_P256_SHA384_ASN1,
-        ECDSA_P384_SHA256_ASN1,
-        ECDSA_P384_SHA384_ASN1, ECDSA_P384_SHA384_FIXED,
+        RSA_PKCS1_2048_8192_SHA1, RSA_PKCS1_2048_8192_SHA256, RSA_PKCS1_2048_8192_SHA384,
+        RSA_PKCS1_2048_8192_SHA512, RSA_PKCS1_3072_8192_SHA384, RSA_PSS_2048_8192_SHA256,
+        RSA_PSS_2048_8192_SHA384, RSA_PSS_2048_8192_SHA512,
     },
-};
 
-pub use ec::curve25519::ed25519::{
-    EdDSAParameters,
-
-    ED25519,
-
-    KeyPair as Ed25519KeyPair,
-    ED25519_PKCS8_V2_LEN,
-    ED25519_PUBLIC_KEY_LEN,
-};
-
-#[cfg(all(feature = "rsa_signing", feature = "use_heap"))]
-pub use rsa::signing::{KeyPair as RSAKeyPair, SigningState as RSASigningState};
-
-#[cfg(all(feature = "rsa_signing", feature = "use_heap"))]
-pub use rsa::{
-    RSAEncoding,
+    Encoding as RsaEncoding,
+    Parameters as RsaParameters,
 
     // `RSA_PKCS1_SHA1` is intentionally not exposed. At a minimum, we'd need
     // to create test vectors for signing with it, which we don't currently
@@ -332,85 +315,63 @@ pub use rsa::{
     RSA_PSS_SHA512,
 };
 
-#[cfg(feature = "use_heap")]
-pub use rsa::RSAParameters;
-
-#[cfg(feature = "use_heap")]
-pub use rsa::verification::{
-    RSA_PKCS1_2048_8192_SHA1,
-    RSA_PKCS1_2048_8192_SHA256,
-    RSA_PKCS1_2048_8192_SHA384,
-    RSA_PKCS1_2048_8192_SHA512,
-
-    RSA_PKCS1_3072_8192_SHA384,
-
-    RSA_PSS_2048_8192_SHA256,
-    RSA_PSS_2048_8192_SHA384,
-    RSA_PSS_2048_8192_SHA512,
-};
-
-pub use signature_impl::Signature;
-
 /// Lower-level verification primitives. Usage of `ring::signature::verify()`
 /// is preferred when the public key and signature are encoded in standard
 /// formats, as it also handles the parsing.
 #[cfg(feature = "use_heap")]
 pub mod primitive {
-    pub use rsa::verification::verify_rsa;
+    pub use crate::rsa::verification::verify_rsa;
 }
 
-/// A key pair for signing.
-#[derive(Debug)]
-pub struct KeyPair {
-    inner: std::boxed::Box<KeyPairImpl + Send + Sync>,
+/// A public key signature returned from a signing operation.
+#[derive(Clone, Copy)]
+pub struct Signature {
+    value: [u8; MAX_LEN],
+    len: usize,
 }
 
-impl KeyPair {
-    pub(crate) fn new<I: KeyPairImpl + Sync>(inner: I) -> Self {
-        Self {
-            inner: std::boxed::Box::new(inner),
-        }
+impl Signature {
+    // Panics if `value` is too long.
+    pub(crate) fn new<F>(fill: F) -> Self
+    where
+        F: FnOnce(&mut [u8; MAX_LEN]) -> usize,
+    {
+        let mut r = Signature {
+            value: [0; MAX_LEN],
+            len: 0,
+        };
+        r.len = fill(&mut r.value);
+        r
     }
 }
 
-pub(crate) trait KeyPairImpl: core::fmt::Debug + Send + 'static {
-    fn sign(&self, rng: &rand::SecureRandom, msg: untrusted::Input)
-            -> Result<Signature, error::Unspecified>;
+impl AsRef<[u8]> for Signature {
+    fn as_ref(&self) -> &[u8] { &self.value[..self.len] }
 }
 
-/// An algorithm for signing.
-#[cfg(feature = "use_heap")]
-pub trait SigningAlgorithm: core::fmt::Debug + Sync + 'static + private::Sealed {
-    /// Parses the key out of the given PKCS#8 document, verifying that it is
-    /// valid for the algorithm.
-    fn from_pkcs8(&'static self, input: untrusted::Input)
-        -> Result<KeyPair, error::Unspecified>;
+/// Key pairs for signing messages (private key and public key).
+pub trait KeyPair: core::fmt::Debug + Send + Sized + Sync {
+    /// The type of the public key.
+    type PublicKey: AsRef<[u8]> + core::fmt::Debug + Clone + Send + Sized + Sync;
+
+    /// The public key for the key pair.
+    fn public_key(&self) -> &Self::PublicKey;
 }
 
-/// Returns a key for signing that is parsed from a PKCS#8 document.
-///
-/// The key is checked to ensure it is valid for the given algorithm.
-#[inline]
-pub fn key_pair_from_pkcs8(alg: &'static SigningAlgorithm, input: untrusted::Input)
-    -> Result<KeyPair, error::Unspecified>
-{
-    alg.from_pkcs8(input)
-}
-
-/// Returns a signature of the given data using the given key. The signing may or may
-/// not use `rng`, depending on the `key_pair's algorithm.
-#[inline]
-pub fn sign(key_pair: &KeyPair, rng: &rand::SecureRandom, msg: untrusted::Input)
-            -> Result<Signature, error::Unspecified> {
-    key_pair.inner.sign(rng, msg)
-}
+/// The longest signature is an ASN.1 P-384 signature where *r* and *s* are of
+/// maximum length with the leading high bit set on each. Then each component
+/// will have a tag, a one-byte length, and a one-byte “I'm not negative”
+/// prefix, and the outer sequence will have a two-byte length.
+pub(crate) const MAX_LEN: usize = 1/*tag:SEQUENCE*/ + 2/*len*/ +
+    (2 * (1/*tag:INTEGER*/ + 1/*len*/ + 1/*zero*/ + ec::SCALAR_MAX_BYTES));
 
 /// A signature verification algorithm.
-pub trait VerificationAlgorithm: core::fmt::Debug + Sync + private::Sealed {
+pub trait VerificationAlgorithm: core::fmt::Debug + Sync + sealed::Sealed {
     /// Verify the signature `signature` of message `msg` with the public key
     /// `public_key`.
-    fn verify(&self, public_key: untrusted::Input, msg: untrusted::Input,
-              signature: untrusted::Input) -> Result<(), error::Unspecified>;
+    fn verify(
+        &self, public_key: untrusted::Input, msg: untrusted::Input, signature: untrusted::Input,
+    ) -> Result<(), error::Unspecified>;
 }
 
 /// Verify the signature `signature` of message `msg` with the public key
@@ -421,9 +382,6 @@ pub trait VerificationAlgorithm: core::fmt::Debug + Sync + private::Sealed {
 /// ## Verify a RSA PKCS#1 signature that uses the SHA-256 digest
 ///
 /// ```
-/// extern crate ring;
-/// extern crate untrusted;
-///
 /// use ring::signature;
 ///
 /// enum Error {
@@ -431,17 +389,18 @@ pub trait VerificationAlgorithm: core::fmt::Debug + Sync + private::Sealed {
 /// }
 ///
 /// # #[cfg(feature = "use_heap")]
-/// fn verify_rsa_pkcs1_sha256(public_key: untrusted::Input,
-///                            msg: untrusted::Input, sig: untrusted::Input)
-///                            -> Result<(), Error> {
-///    signature::verify(&signature::RSA_PKCS1_2048_8192_SHA256, public_key,
-///                      msg, sig).map_err(|_| Error::InvalidSignature)
+/// fn verify_rsa_pkcs1_sha256(
+///     public_key: untrusted::Input, msg: untrusted::Input, sig: untrusted::Input,
+/// ) -> Result<(), Error> {
+///     signature::verify(&signature::RSA_PKCS1_2048_8192_SHA256, public_key, msg, sig)
+///         .map_err(|_| Error::InvalidSignature)
 /// }
 /// # fn main() { }
 /// ```
-pub fn verify(alg: &VerificationAlgorithm, public_key: untrusted::Input,
-              msg: untrusted::Input, signature: untrusted::Input)
-              -> Result<(), error::Unspecified> {
-    init::init_once();
+pub fn verify(
+    alg: &VerificationAlgorithm, public_key: untrusted::Input, msg: untrusted::Input,
+    signature: untrusted::Input,
+) -> Result<(), error::Unspecified> {
+    cpu::cache_detected_features();
     alg.verify(public_key, msg, signature)
 }

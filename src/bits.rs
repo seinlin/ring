@@ -12,26 +12,24 @@
 // OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
 // CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
-use error;
+use crate::error;
 
-/// XXX: When `const_fn` is implemented then make the value private to force
-/// the constructors to be used.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd)]
-pub struct BitLength(pub usize);
+pub struct BitLength(usize);
 
 // Lengths measured in bits, where all arithmetic is guaranteed not to
 // overflow.
 impl BitLength {
     #[inline]
-    pub fn from_usize_bits(bits: usize) -> BitLength { BitLength(bits) }
+    pub const fn from_usize_bits(bits: usize) -> BitLength { BitLength(bits) }
 
     #[inline]
-    pub fn from_usize_bytes(bytes: usize)
-                            -> Result<BitLength, error::Unspecified> {
+    pub fn from_usize_bytes(bytes: usize) -> Result<BitLength, error::Unspecified> {
         let bits = bytes.checked_mul(8).ok_or(error::Unspecified)?;
         Ok(BitLength::from_usize_bits(bits))
     }
 
+    #[cfg(feature = "use_heap")]
     #[inline]
     pub fn half_rounded_up(&self) -> BitLength {
         let round_up = self.0 & 1;
@@ -41,6 +39,7 @@ impl BitLength {
     #[inline]
     pub fn as_usize_bits(&self) -> usize { self.0 }
 
+    #[cfg(feature = "use_heap")]
     #[inline]
     pub fn as_usize_bytes_rounded_up(&self) -> usize {
         // Equivalent to (self.0 + 7) / 8, except with no potential for
@@ -52,12 +51,10 @@ impl BitLength {
         (self.0 / 8) + round_up
     }
 
+    #[cfg(feature = "use_heap")]
     #[inline]
-    pub fn try_sub(self, other: BitLength)
-                   -> Result<BitLength, error::Unspecified> {
-        let sum = self.0.checked_sub(other.0).ok_or(error::Unspecified)?;
+    pub fn try_sub_1(self) -> Result<BitLength, error::Unspecified> {
+        let sum = self.0.checked_sub(1).ok_or(error::Unspecified)?;
         Ok(BitLength(sum))
     }
 }
-
-pub const ONE: BitLength = BitLength(1);

@@ -28,10 +28,8 @@
     unused_qualifications,
     unused_results,
     variant_size_differences,
-    warnings,
+    warnings
 )]
-
-extern crate ring;
 
 use ring::{error, hkdf, hmac, test};
 
@@ -39,14 +37,15 @@ use ring::{error, hkdf, hmac, test};
 fn hkdf_tests() {
     test::from_file("tests/hkdf_tests.txt", |section, test_case| {
         assert_eq!(section, "");
-        let digest_alg =
-            test_case.consume_digest_alg("Hash").ok_or(error::Unspecified)?;
+        let digest_alg = test_case
+            .consume_digest_alg("Hash")
+            .ok_or(error::Unspecified)?;
         let secret = test_case.consume_bytes("IKM");
         let salt = test_case.consume_bytes("salt");
         let info = test_case.consume_bytes("info");
 
         // The PRK is an intermediate value that we can't test, but we
-        // have to consume it to make test::from_file happy.
+        // have to consume it to make test_util::from_file happy.
         let _ = test_case.consume_bytes("PRK");
 
         let expected_out = test_case.consume_bytes("OKM");

@@ -23,13 +23,15 @@
 
 #include "ecp_nistz256.h"
 
-#include <assert.h>
-#include <stdint.h>
 #include <string.h>
 
 #include "ecp_nistz.h"
 #include "../bn/internal.h"
 #include "../../limbs/limbs.inl"
+
+#if defined(__GNUC__)
+#pragma GCC diagnostic ignored "-Wsign-conversion"
+#endif
 
 typedef P256_POINT_AFFINE PRECOMP256_ROW[64];
 

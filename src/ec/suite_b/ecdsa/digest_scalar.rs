@@ -14,8 +14,11 @@
 
 //! ECDSA Signatures using the P-256 and P-384 curves.
 
-use digest;
-use ec::suite_b::ops::*;
+use crate::{
+    digest,
+    ec::suite_b::ops::*,
+    limb::{self, LIMB_BYTES},
+};
 use untrusted;
 
 /// Calculate the digest of `msg` using the digest algorithm `digest_alg`. Then
@@ -44,8 +47,13 @@ use untrusted;
 /// right will give a value less than 2**255, which is less than `n`. The
 /// analogous argument applies for P-384. However, it does *not* apply in
 /// general; for example, it doesn't apply to P-521.
-pub fn digest_scalar(ops: &ScalarOps, msg: &digest::Digest) -> Scalar {
+pub fn digest_scalar(ops: &ScalarOps, msg: digest::Digest) -> Scalar {
     digest_scalar_(ops, msg.as_ref())
+}
+
+#[cfg(test)]
+pub(crate) fn digest_bytes_scalar(ops: &ScalarOps, digest: &[u8]) -> Scalar {
+    digest_scalar_(ops, digest)
 }
 
 // This is a separate function solely so that we can test specific digest
@@ -60,57 +68,66 @@ fn digest_scalar_(ops: &ScalarOps, digest: &[u8]) -> Scalar {
     };
 
     scalar_parse_big_endian_partially_reduced_variable_consttime(
-        cops, AllowZero::Yes, untrusted::Input::from(digest)).unwrap()
+        cops,
+        limb::AllowZero::Yes,
+        untrusted::Input::from(digest),
+    )
+    .unwrap()
 }
 
 #[cfg(test)]
 mod tests {
-    use {digest, test};
-    use super::digest_scalar_;
-    use ec::suite_b::ops::*;
+    use super::digest_bytes_scalar;
+    use crate::{
+        digest,
+        ec::suite_b::ops::*,
+        limb::{self, LIMB_BYTES},
+        test,
+    };
     use untrusted;
 
     #[test]
     fn test() {
-        test::from_file("src/ec/suite_b/ecdsa/ecdsa_digest_scalar_tests.txt",
-                        |section, test_case| {
-            assert_eq!(section, "");
+        test::from_file(
+            "src/ec/suite_b/ecdsa/ecdsa_digest_scalar_tests.txt",
+            |section, test_case| {
+                assert_eq!(section, "");
 
-            let curve_name = test_case.consume_string("Curve");
-            let digest_name = test_case.consume_string("Digest");
-            let input = test_case.consume_bytes("Input");
-            let output = test_case.consume_bytes("Output");
+                let curve_name = test_case.consume_string("Curve");
+                let digest_name = test_case.consume_string("Digest");
+                let input = test_case.consume_bytes("Input");
+                let output = test_case.consume_bytes("Output");
 
-            let (ops, digest_alg) = match
-                (curve_name.as_str(), digest_name.as_str()) {
-                ("P-256", "SHA256") =>
-                    (&p256::PUBLIC_SCALAR_OPS, &digest::SHA256),
-                ("P-256", "SHA384") =>
-                    (&p256::PUBLIC_SCALAR_OPS, &digest::SHA384),
-                ("P-384", "SHA256") =>
-                    (&p384::PUBLIC_SCALAR_OPS, &digest::SHA256),
-                ("P-384", "SHA384") =>
-                    (&p384::PUBLIC_SCALAR_OPS, &digest::SHA384),
-                _ => {
-                    panic!("Unsupported curve+digest: {}+{}", curve_name,
-                           digest_name);
-                }
-            };
+                let (ops, digest_alg) = match (curve_name.as_str(), digest_name.as_str()) {
+                    ("P-256", "SHA256") => (&p256::PUBLIC_SCALAR_OPS, &digest::SHA256),
+                    ("P-256", "SHA384") => (&p256::PUBLIC_SCALAR_OPS, &digest::SHA384),
+                    ("P-384", "SHA256") => (&p384::PUBLIC_SCALAR_OPS, &digest::SHA256),
+                    ("P-384", "SHA384") => (&p384::PUBLIC_SCALAR_OPS, &digest::SHA384),
+                    _ => {
+                        panic!("Unsupported curve+digest: {}+{}", curve_name, digest_name);
+                    },
+                };
 
-            let num_limbs = ops.public_key_ops.common.num_limbs;
-            assert_eq!(input.len(), digest_alg.output_len);
-            assert_eq!(output.len(),
-                       ops.public_key_ops.common.num_limbs * LIMB_BYTES);
+                let num_limbs = ops.public_key_ops.common.num_limbs;
+                assert_eq!(input.len(), digest_alg.output_len);
+                assert_eq!(
+                    output.len(),
+                    ops.public_key_ops.common.num_limbs * LIMB_BYTES
+                );
 
-            let expected = scalar_parse_big_endian_variable(
-                ops.public_key_ops.common, AllowZero::Yes,
-                untrusted::Input::from(&output)).unwrap();
+                let expected = scalar_parse_big_endian_variable(
+                    ops.public_key_ops.common,
+                    limb::AllowZero::Yes,
+                    untrusted::Input::from(&output),
+                )
+                .unwrap();
 
-            let actual = digest_scalar_(ops.scalar_ops, &input);
+                let actual = digest_bytes_scalar(ops.scalar_ops, &input);
 
-            assert_eq!(actual.limbs[..num_limbs], expected.limbs[..num_limbs]);
+                assert_eq!(actual.limbs[..num_limbs], expected.limbs[..num_limbs]);
 
-            Ok(())
-        });
+                Ok(())
+            },
+        );
     }
 }

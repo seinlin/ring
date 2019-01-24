@@ -30,20 +30,18 @@
 //!         <code>dev_urandom_fallback</code> feature is disabled, such
 //!         fallbacks will not occur. See the documentation for
 //!         <code>rand::SystemRandom</code> for more details.
-//! <tr><td><code>rsa_signing</code>
-//!     <td>Enable RSA signing (<code>RSAKeyPair</code> and related things).
+//! <tr><td><code>use_heap (default)</code>
+//!     <td>Enable features that require use of the heap, RSA in particular.
 //! </table>
 
-#![doc(html_root_url="https://briansmith.org/rustdoc/")]
-
+#![doc(html_root_url = "https://briansmith.org/rustdoc/")]
 #![allow(
     missing_copy_implementations,
     missing_debug_implementations,
     non_camel_case_types,
     non_snake_case,
-    unsafe_code,
+    unsafe_code
 )]
-
 // `#[derive(...)]` uses `trivial_numeric_casts` and `unused_qualifications`
 // internally.
 #![deny(
@@ -51,47 +49,34 @@
     trivial_numeric_casts,
     unstable_features, // Used by `internal_benches`
     unused_qualifications,
+    variant_size_differences,
 )]
-
 #![forbid(
     anonymous_parameters,
     trivial_casts,
     unused_extern_crates,
     unused_import_braces,
     unused_results,
-    variant_size_differences,
-    warnings,
+    warnings
 )]
-
-#![no_std]
-
+#![cfg_attr(
+    any(
+        target_os = "redox",
+        all(
+            not(test),
+            not(feature = "use_heap"),
+            unix,
+            not(any(target_os = "macos", target_os = "ios")),
+            any(not(target_os = "linux"), feature = "dev_urandom_fallback")
+        )
+    ),
+    no_std
+)]
 #![cfg_attr(feature = "internal_benches", allow(unstable_features))]
 #![cfg_attr(feature = "internal_benches", feature(test))]
 
-#[cfg(target_os = "linux")]
-extern crate libc;
-
-#[cfg(feature = "internal_benches")]
-extern crate test as bench;
-
-#[cfg(any(target_os = "redox",
-          all(unix,
-              not(any(target_os = "macos", target_os = "ios")),
-              any(not(target_os = "linux"),
-                  feature = "dev_urandom_fallback"))))]
-#[macro_use]
-extern crate lazy_static;
-
 #[macro_use]
 mod debug;
-
-// `ring::test` uses the formatting & printing stuff in non-test mode.
-#[macro_use]
-extern crate std;
-
-extern crate untrusted;
-
-mod arithmetic;
 
 #[macro_use]
 mod bssl;
@@ -99,52 +84,50 @@ mod bssl;
 #[macro_use]
 mod polyfill;
 
+mod arithmetic;
+
 pub mod aead;
 pub mod agreement;
 
-#[cfg(feature = "use_heap")]
 mod bits;
 
 mod c;
-mod chacha;
 pub mod constant_time;
 
-#[doc(hidden)]
-pub mod der;
+pub mod io;
 
+mod cpu;
 pub mod digest;
 mod ec;
+mod endian;
 pub mod error;
 pub mod hkdf;
 pub mod hmac;
-mod init;
 mod limb;
 pub mod pbkdf2;
 mod pkcs8;
-mod poly1305;
 pub mod rand;
 
 #[cfg(feature = "use_heap")]
 mod rsa;
 
 pub mod signature;
-mod signature_impl;
 
-#[cfg(any(feature = "use_heap", test))]
+#[cfg(any(test, feature = "use_heap"))]
 pub mod test;
 
-mod private {
+mod sealed {
     /// Traits that are designed to only be implemented internally in *ring*.
     //
     // Usage:
     // ```
-    // use private;
+    // use crate::sealed;
     //
-    // pub trait MyType : private::Sealed {
+    // pub trait MyType: sealed::Sealed {
     //     // [...]
     // }
     //
-    // impl private::Sealed for MyType { }
+    // impl sealed::Sealed for MyType {}
     // ```
     pub trait Sealed {}
 }

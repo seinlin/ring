@@ -17,188 +17,79 @@ matrix:
     #
     # BEGIN GENERATED
 
-    - env: TARGET_X=x86_64-apple-darwin  FEATURES_X=--features=rsa_signing MODE_X=DEBUG KCOV=0
-      rust: stable
-      os: osx
-      osx_image: xcode9.3
-
     - env: TARGET_X=x86_64-apple-darwin  FEATURES_X= MODE_X=DEBUG KCOV=0
       rust: stable
       os: osx
-      osx_image: xcode9.3
-
-    - env: TARGET_X=x86_64-apple-darwin  FEATURES_X=--features=rsa_signing MODE_X=RELWITHDEBINFO KCOV=0
-      rust: stable
-      os: osx
-      osx_image: xcode9.3
+      osx_image: xcode10.1
 
     - env: TARGET_X=x86_64-apple-darwin  FEATURES_X= MODE_X=RELWITHDEBINFO KCOV=0
       rust: stable
       os: osx
-      osx_image: xcode9.3
-
-    - env: TARGET_X=armv7-linux-androideabi CC_X=arm-linux-androideabi-clang FEATURES_X=--features=rsa_signing MODE_X=DEBUG KCOV=0
-      rust: stable
-      os: linux
-      dist: trusty
-      sudo: required
-      addons:
-        apt:
-          packages:
-            - expect
-            - openjdk-6-jre-headless
-          sources:
-            - ubuntu-toolchain-r-test
+      osx_image: xcode10.1
 
     - env: TARGET_X=armv7-linux-androideabi CC_X=arm-linux-androideabi-clang FEATURES_X= MODE_X=DEBUG KCOV=0
       rust: stable
       os: linux
       dist: trusty
-      sudo: required
       addons:
         apt:
           packages:
             - expect
-            - openjdk-6-jre-headless
-          sources:
-            - ubuntu-toolchain-r-test
-
-    - env: TARGET_X=armv7-linux-androideabi CC_X=arm-linux-androideabi-clang FEATURES_X=--features=rsa_signing MODE_X=RELWITHDEBINFO KCOV=0
-      rust: stable
-      os: linux
-      dist: trusty
-      sudo: required
-      addons:
-        apt:
-          packages:
-            - expect
-            - openjdk-6-jre-headless
-          sources:
-            - ubuntu-toolchain-r-test
 
     - env: TARGET_X=armv7-linux-androideabi CC_X=arm-linux-androideabi-clang FEATURES_X= MODE_X=RELWITHDEBINFO KCOV=0
       rust: stable
       os: linux
       dist: trusty
-      sudo: required
       addons:
         apt:
           packages:
             - expect
-            - openjdk-6-jre-headless
-          sources:
-            - ubuntu-toolchain-r-test
-
-    - env: TARGET_X=x86_64-unknown-linux-gnu  FEATURES_X=--features=rsa_signing MODE_X=DEBUG KCOV=0
-      rust: stable
-      os: linux
 
     - env: TARGET_X=x86_64-unknown-linux-gnu  FEATURES_X= MODE_X=DEBUG KCOV=0
       rust: stable
       os: linux
-
-    - env: TARGET_X=x86_64-unknown-linux-gnu  FEATURES_X=--features=rsa_signing MODE_X=RELWITHDEBINFO KCOV=0
-      rust: stable
-      os: linux
+      dist: trusty
 
     - env: TARGET_X=x86_64-unknown-linux-gnu  FEATURES_X= MODE_X=RELWITHDEBINFO KCOV=0
       rust: stable
       os: linux
+      dist: trusty
 
-    - env: TARGET_X=x86_64-unknown-linux-gnu CC_X=clang-5.0 FEATURES_X=--features=rsa_signing MODE_X=DEBUG KCOV=0
+    - env: TARGET_X=x86_64-unknown-linux-gnu CC_X=clang FEATURES_X= MODE_X=DEBUG KCOV=0
       rust: stable
       os: linux
+      dist: trusty
+
+    - env: TARGET_X=x86_64-unknown-linux-gnu CC_X=clang FEATURES_X= MODE_X=RELWITHDEBINFO KCOV=0
+      rust: stable
+      os: linux
+      dist: trusty
+
+    - env: TARGET_X=x86_64-unknown-linux-gnu CC_X=gcc-7 FEATURES_X= MODE_X=DEBUG KCOV=1
+      rust: stable
+      os: linux
+      dist: trusty
       addons:
         apt:
           packages:
-            - clang-5.0
-          sources:
-            - llvm-toolchain-trusty-5.0
-            - ubuntu-toolchain-r-test
-
-    - env: TARGET_X=x86_64-unknown-linux-gnu CC_X=clang-5.0 FEATURES_X= MODE_X=DEBUG KCOV=0
-      rust: stable
-      os: linux
-      addons:
-        apt:
-          packages:
-            - clang-5.0
-          sources:
-            - llvm-toolchain-trusty-5.0
-            - ubuntu-toolchain-r-test
-
-    - env: TARGET_X=x86_64-unknown-linux-gnu CC_X=clang-5.0 FEATURES_X=--features=rsa_signing MODE_X=RELWITHDEBINFO KCOV=0
-      rust: stable
-      os: linux
-      addons:
-        apt:
-          packages:
-            - clang-5.0
-          sources:
-            - llvm-toolchain-trusty-5.0
-            - ubuntu-toolchain-r-test
-
-    - env: TARGET_X=x86_64-unknown-linux-gnu CC_X=clang-5.0 FEATURES_X= MODE_X=RELWITHDEBINFO KCOV=0
-      rust: stable
-      os: linux
-      addons:
-        apt:
-          packages:
-            - clang-5.0
-          sources:
-            - llvm-toolchain-trusty-5.0
-            - ubuntu-toolchain-r-test
-
-    - env: TARGET_X=x86_64-unknown-linux-gnu CC_X=gcc-7 FEATURES_X=--features=rsa_signing MODE_X=DEBUG KCOV=0
-      rust: stable
-      os: linux
-      addons:
-        apt:
-          packages:
+            - binutils-dev
+            - g++-7
             - gcc-7
-          sources:
-            - ubuntu-toolchain-r-test
-
-    - env: TARGET_X=x86_64-unknown-linux-gnu CC_X=gcc-7 FEATURES_X= MODE_X=DEBUG KCOV=0
-      rust: stable
-      os: linux
-      addons:
-        apt:
-          packages:
-            - gcc-7
-          sources:
-            - ubuntu-toolchain-r-test
-
-    - env: TARGET_X=x86_64-unknown-linux-gnu CC_X=gcc-7 FEATURES_X=--features=rsa_signing MODE_X=RELWITHDEBINFO KCOV=0
-      rust: stable
-      os: linux
-      addons:
-        apt:
-          packages:
-            - gcc-7
+            - libcurl4-openssl-dev
+            - libdw-dev
+            - libelf-dev
+            - libiberty-dev
           sources:
             - ubuntu-toolchain-r-test
 
     - env: TARGET_X=x86_64-unknown-linux-gnu CC_X=gcc-7 FEATURES_X= MODE_X=RELWITHDEBINFO KCOV=0
       rust: stable
       os: linux
+      dist: trusty
       addons:
         apt:
           packages:
             - gcc-7
-          sources:
-            - ubuntu-toolchain-r-test
-
-    - env: TARGET_X=aarch64-unknown-linux-gnu CC_X=aarch64-linux-gnu-gcc FEATURES_X=--features=rsa_signing MODE_X=DEBUG KCOV=0
-      rust: stable
-      os: linux
-      dist: trusty
-      sudo: required
-      addons:
-        apt:
-          packages:
-            - gcc-aarch64-linux-gnu
-            - libc6-dev-arm64-cross
           sources:
             - ubuntu-toolchain-r-test
 
@@ -206,20 +97,6 @@ matrix:
       rust: stable
       os: linux
       dist: trusty
-      sudo: required
-      addons:
-        apt:
-          packages:
-            - gcc-aarch64-linux-gnu
-            - libc6-dev-arm64-cross
-          sources:
-            - ubuntu-toolchain-r-test
-
-    - env: TARGET_X=aarch64-unknown-linux-gnu CC_X=aarch64-linux-gnu-gcc FEATURES_X=--features=rsa_signing MODE_X=RELWITHDEBINFO KCOV=0
-      rust: stable
-      os: linux
-      dist: trusty
-      sudo: required
       addons:
         apt:
           packages:
@@ -232,7 +109,6 @@ matrix:
       rust: stable
       os: linux
       dist: trusty
-      sudo: required
       addons:
         apt:
           packages:
@@ -241,31 +117,10 @@ matrix:
           sources:
             - ubuntu-toolchain-r-test
 
-    - env: TARGET_X=i686-unknown-linux-gnu  FEATURES_X=--features=rsa_signing MODE_X=DEBUG KCOV=0
-      rust: stable
-      os: linux
-      addons:
-        apt:
-          packages:
-            - gcc-multilib
-            - libc6-dev-i386
-          sources:
-            - ubuntu-toolchain-r-test
-
     - env: TARGET_X=i686-unknown-linux-gnu  FEATURES_X= MODE_X=DEBUG KCOV=0
       rust: stable
       os: linux
-      addons:
-        apt:
-          packages:
-            - gcc-multilib
-            - libc6-dev-i386
-          sources:
-            - ubuntu-toolchain-r-test
-
-    - env: TARGET_X=i686-unknown-linux-gnu  FEATURES_X=--features=rsa_signing MODE_X=RELWITHDEBINFO KCOV=0
-      rust: stable
-      os: linux
+      dist: trusty
       addons:
         apt:
           packages:
@@ -277,6 +132,7 @@ matrix:
     - env: TARGET_X=i686-unknown-linux-gnu  FEATURES_X= MODE_X=RELWITHDEBINFO KCOV=0
       rust: stable
       os: linux
+      dist: trusty
       addons:
         apt:
           packages:
@@ -285,90 +141,48 @@ matrix:
           sources:
             - ubuntu-toolchain-r-test
 
-    - env: TARGET_X=i686-unknown-linux-gnu CC_X=clang-5.0 FEATURES_X=--features=rsa_signing MODE_X=DEBUG KCOV=0
+    - env: TARGET_X=i686-unknown-linux-gnu CC_X=clang FEATURES_X= MODE_X=DEBUG KCOV=0
       rust: stable
       os: linux
+      dist: trusty
       addons:
         apt:
           packages:
-            - clang-5.0
             - gcc-multilib
             - libc6-dev-i386
           sources:
-            - llvm-toolchain-trusty-5.0
             - ubuntu-toolchain-r-test
 
-    - env: TARGET_X=i686-unknown-linux-gnu CC_X=clang-5.0 FEATURES_X= MODE_X=DEBUG KCOV=0
+    - env: TARGET_X=i686-unknown-linux-gnu CC_X=clang FEATURES_X= MODE_X=RELWITHDEBINFO KCOV=0
       rust: stable
       os: linux
+      dist: trusty
       addons:
         apt:
           packages:
-            - clang-5.0
             - gcc-multilib
             - libc6-dev-i386
           sources:
-            - llvm-toolchain-trusty-5.0
             - ubuntu-toolchain-r-test
 
-    - env: TARGET_X=i686-unknown-linux-gnu CC_X=clang-5.0 FEATURES_X=--features=rsa_signing MODE_X=RELWITHDEBINFO KCOV=0
+    - env: TARGET_X=i686-unknown-linux-gnu CC_X=gcc-7 FEATURES_X= MODE_X=DEBUG KCOV=1
       rust: stable
       os: linux
+      dist: trusty
       addons:
         apt:
           packages:
-            - clang-5.0
-            - gcc-multilib
-            - libc6-dev-i386
-          sources:
-            - llvm-toolchain-trusty-5.0
-            - ubuntu-toolchain-r-test
-
-    - env: TARGET_X=i686-unknown-linux-gnu CC_X=clang-5.0 FEATURES_X= MODE_X=RELWITHDEBINFO KCOV=0
-      rust: stable
-      os: linux
-      addons:
-        apt:
-          packages:
-            - clang-5.0
-            - gcc-multilib
-            - libc6-dev-i386
-          sources:
-            - llvm-toolchain-trusty-5.0
-            - ubuntu-toolchain-r-test
-
-    - env: TARGET_X=i686-unknown-linux-gnu CC_X=gcc-7 FEATURES_X=--features=rsa_signing MODE_X=DEBUG KCOV=0
-      rust: stable
-      os: linux
-      addons:
-        apt:
-          packages:
+            - g++-7
+            - g++-7-multilib
             - gcc-7
             - gcc-7-multilib
-            - linux-libc-dev:i386
-          sources:
-            - ubuntu-toolchain-r-test
-
-    - env: TARGET_X=i686-unknown-linux-gnu CC_X=gcc-7 FEATURES_X= MODE_X=DEBUG KCOV=0
-      rust: stable
-      os: linux
-      addons:
-        apt:
-          packages:
-            - gcc-7
-            - gcc-7-multilib
-            - linux-libc-dev:i386
-          sources:
-            - ubuntu-toolchain-r-test
-
-    - env: TARGET_X=i686-unknown-linux-gnu CC_X=gcc-7 FEATURES_X=--features=rsa_signing MODE_X=RELWITHDEBINFO KCOV=0
-      rust: stable
-      os: linux
-      addons:
-        apt:
-          packages:
-            - gcc-7
-            - gcc-7-multilib
+            - libcurl3:i386
+            - libcurl4-openssl-dev:i386
+            - libdw-dev:i386
+            - libelf-dev:i386
+            - libiberty-dev:i386
+            - libkrb5-dev:i386
+            - libssl-dev:i386
             - linux-libc-dev:i386
           sources:
             - ubuntu-toolchain-r-test
@@ -376,6 +190,7 @@ matrix:
     - env: TARGET_X=i686-unknown-linux-gnu CC_X=gcc-7 FEATURES_X= MODE_X=RELWITHDEBINFO KCOV=0
       rust: stable
       os: linux
+      dist: trusty
       addons:
         apt:
           packages:
@@ -385,37 +200,10 @@ matrix:
           sources:
             - ubuntu-toolchain-r-test
 
-    - env: TARGET_X=arm-unknown-linux-gnueabihf CC_X=arm-linux-gnueabihf-gcc FEATURES_X=--features=rsa_signing MODE_X=DEBUG KCOV=0
-      rust: stable
-      os: linux
-      dist: trusty
-      sudo: required
-      addons:
-        apt:
-          packages:
-            - gcc-arm-linux-gnueabihf
-            - libc6-dev-armhf-cross
-          sources:
-            - ubuntu-toolchain-r-test
-
     - env: TARGET_X=arm-unknown-linux-gnueabihf CC_X=arm-linux-gnueabihf-gcc FEATURES_X= MODE_X=DEBUG KCOV=0
       rust: stable
       os: linux
       dist: trusty
-      sudo: required
-      addons:
-        apt:
-          packages:
-            - gcc-arm-linux-gnueabihf
-            - libc6-dev-armhf-cross
-          sources:
-            - ubuntu-toolchain-r-test
-
-    - env: TARGET_X=arm-unknown-linux-gnueabihf CC_X=arm-linux-gnueabihf-gcc FEATURES_X=--features=rsa_signing MODE_X=RELWITHDEBINFO KCOV=0
-      rust: stable
-      os: linux
-      dist: trusty
-      sudo: required
       addons:
         apt:
           packages:
@@ -428,7 +216,6 @@ matrix:
       rust: stable
       os: linux
       dist: trusty
-      sudo: required
       addons:
         apt:
           packages:
@@ -437,161 +224,58 @@ matrix:
           sources:
             - ubuntu-toolchain-r-test
 
-    - env: TARGET_X=x86_64-apple-darwin  FEATURES_X=--features=rsa_signing MODE_X=DEBUG KCOV=0
-      rust: nightly
-      os: osx
-      osx_image: xcode9.3
-
     - env: TARGET_X=x86_64-apple-darwin  FEATURES_X= MODE_X=DEBUG KCOV=0
       rust: nightly
       os: osx
-      osx_image: xcode9.3
-
-    - env: TARGET_X=x86_64-apple-darwin  FEATURES_X=--features=rsa_signing MODE_X=RELWITHDEBINFO KCOV=0
-      rust: nightly
-      os: osx
-      osx_image: xcode9.3
+      osx_image: xcode10.1
 
     - env: TARGET_X=x86_64-apple-darwin  FEATURES_X= MODE_X=RELWITHDEBINFO KCOV=0
       rust: nightly
       os: osx
-      osx_image: xcode9.3
-
-    - env: TARGET_X=armv7-linux-androideabi CC_X=arm-linux-androideabi-clang FEATURES_X=--features=rsa_signing MODE_X=DEBUG KCOV=0
-      rust: nightly
-      os: linux
-      dist: trusty
-      sudo: required
-      addons:
-        apt:
-          packages:
-            - expect
-            - openjdk-6-jre-headless
-          sources:
-            - ubuntu-toolchain-r-test
+      osx_image: xcode10.1
 
     - env: TARGET_X=armv7-linux-androideabi CC_X=arm-linux-androideabi-clang FEATURES_X= MODE_X=DEBUG KCOV=0
       rust: nightly
       os: linux
       dist: trusty
-      sudo: required
       addons:
         apt:
           packages:
             - expect
-            - openjdk-6-jre-headless
-          sources:
-            - ubuntu-toolchain-r-test
-
-    - env: TARGET_X=armv7-linux-androideabi CC_X=arm-linux-androideabi-clang FEATURES_X=--features=rsa_signing MODE_X=RELWITHDEBINFO KCOV=0
-      rust: nightly
-      os: linux
-      dist: trusty
-      sudo: required
-      addons:
-        apt:
-          packages:
-            - expect
-            - openjdk-6-jre-headless
-          sources:
-            - ubuntu-toolchain-r-test
 
     - env: TARGET_X=armv7-linux-androideabi CC_X=arm-linux-androideabi-clang FEATURES_X= MODE_X=RELWITHDEBINFO KCOV=0
       rust: nightly
       os: linux
       dist: trusty
-      sudo: required
       addons:
         apt:
           packages:
             - expect
-            - openjdk-6-jre-headless
-          sources:
-            - ubuntu-toolchain-r-test
-
-    - env: TARGET_X=x86_64-unknown-linux-gnu  FEATURES_X=--features=rsa_signing MODE_X=DEBUG KCOV=0
-      rust: nightly
-      os: linux
 
     - env: TARGET_X=x86_64-unknown-linux-gnu  FEATURES_X= MODE_X=DEBUG KCOV=0
       rust: nightly
       os: linux
-
-    - env: TARGET_X=x86_64-unknown-linux-gnu  FEATURES_X=--features=rsa_signing MODE_X=RELWITHDEBINFO KCOV=0
-      rust: nightly
-      os: linux
+      dist: trusty
 
     - env: TARGET_X=x86_64-unknown-linux-gnu  FEATURES_X= MODE_X=RELWITHDEBINFO KCOV=0
       rust: nightly
       os: linux
+      dist: trusty
 
-    - env: TARGET_X=x86_64-unknown-linux-gnu CC_X=clang-5.0 FEATURES_X=--features=rsa_signing MODE_X=DEBUG KCOV=0
+    - env: TARGET_X=x86_64-unknown-linux-gnu CC_X=clang FEATURES_X= MODE_X=DEBUG KCOV=0
       rust: nightly
       os: linux
-      addons:
-        apt:
-          packages:
-            - clang-5.0
-          sources:
-            - llvm-toolchain-trusty-5.0
-            - ubuntu-toolchain-r-test
+      dist: trusty
 
-    - env: TARGET_X=x86_64-unknown-linux-gnu CC_X=clang-5.0 FEATURES_X= MODE_X=DEBUG KCOV=0
+    - env: TARGET_X=x86_64-unknown-linux-gnu CC_X=clang FEATURES_X= MODE_X=RELWITHDEBINFO KCOV=0
       rust: nightly
       os: linux
-      addons:
-        apt:
-          packages:
-            - clang-5.0
-          sources:
-            - llvm-toolchain-trusty-5.0
-            - ubuntu-toolchain-r-test
-
-    - env: TARGET_X=x86_64-unknown-linux-gnu CC_X=clang-5.0 FEATURES_X=--features=rsa_signing MODE_X=RELWITHDEBINFO KCOV=0
-      rust: nightly
-      os: linux
-      addons:
-        apt:
-          packages:
-            - clang-5.0
-          sources:
-            - llvm-toolchain-trusty-5.0
-            - ubuntu-toolchain-r-test
-
-    - env: TARGET_X=x86_64-unknown-linux-gnu CC_X=clang-5.0 FEATURES_X= MODE_X=RELWITHDEBINFO KCOV=0
-      rust: nightly
-      os: linux
-      addons:
-        apt:
-          packages:
-            - clang-5.0
-          sources:
-            - llvm-toolchain-trusty-5.0
-            - ubuntu-toolchain-r-test
-
-    - env: TARGET_X=x86_64-unknown-linux-gnu CC_X=gcc-7 FEATURES_X=--features=rsa_signing MODE_X=DEBUG KCOV=0
-      rust: nightly
-      os: linux
-      addons:
-        apt:
-          packages:
-            - gcc-7
-          sources:
-            - ubuntu-toolchain-r-test
+      dist: trusty
 
     - env: TARGET_X=x86_64-unknown-linux-gnu CC_X=gcc-7 FEATURES_X= MODE_X=DEBUG KCOV=0
       rust: nightly
       os: linux
-      addons:
-        apt:
-          packages:
-            - gcc-7
-          sources:
-            - ubuntu-toolchain-r-test
-
-    - env: TARGET_X=x86_64-unknown-linux-gnu CC_X=gcc-7 FEATURES_X=--features=rsa_signing MODE_X=RELWITHDEBINFO KCOV=0
-      rust: nightly
-      os: linux
+      dist: trusty
       addons:
         apt:
           packages:
@@ -602,6 +286,7 @@ matrix:
     - env: TARGET_X=x86_64-unknown-linux-gnu CC_X=gcc-7 FEATURES_X= MODE_X=RELWITHDEBINFO KCOV=0
       rust: nightly
       os: linux
+      dist: trusty
       addons:
         apt:
           packages:
@@ -609,37 +294,10 @@ matrix:
           sources:
             - ubuntu-toolchain-r-test
 
-    - env: TARGET_X=aarch64-unknown-linux-gnu CC_X=aarch64-linux-gnu-gcc FEATURES_X=--features=rsa_signing MODE_X=DEBUG KCOV=0
-      rust: nightly
-      os: linux
-      dist: trusty
-      sudo: required
-      addons:
-        apt:
-          packages:
-            - gcc-aarch64-linux-gnu
-            - libc6-dev-arm64-cross
-          sources:
-            - ubuntu-toolchain-r-test
-
     - env: TARGET_X=aarch64-unknown-linux-gnu CC_X=aarch64-linux-gnu-gcc FEATURES_X= MODE_X=DEBUG KCOV=0
       rust: nightly
       os: linux
       dist: trusty
-      sudo: required
-      addons:
-        apt:
-          packages:
-            - gcc-aarch64-linux-gnu
-            - libc6-dev-arm64-cross
-          sources:
-            - ubuntu-toolchain-r-test
-
-    - env: TARGET_X=aarch64-unknown-linux-gnu CC_X=aarch64-linux-gnu-gcc FEATURES_X=--features=rsa_signing MODE_X=RELWITHDEBINFO KCOV=0
-      rust: nightly
-      os: linux
-      dist: trusty
-      sudo: required
       addons:
         apt:
           packages:
@@ -652,7 +310,6 @@ matrix:
       rust: nightly
       os: linux
       dist: trusty
-      sudo: required
       addons:
         apt:
           packages:
@@ -661,31 +318,10 @@ matrix:
           sources:
             - ubuntu-toolchain-r-test
 
-    - env: TARGET_X=i686-unknown-linux-gnu  FEATURES_X=--features=rsa_signing MODE_X=DEBUG KCOV=0
-      rust: nightly
-      os: linux
-      addons:
-        apt:
-          packages:
-            - gcc-multilib
-            - libc6-dev-i386
-          sources:
-            - ubuntu-toolchain-r-test
-
     - env: TARGET_X=i686-unknown-linux-gnu  FEATURES_X= MODE_X=DEBUG KCOV=0
       rust: nightly
       os: linux
-      addons:
-        apt:
-          packages:
-            - gcc-multilib
-            - libc6-dev-i386
-          sources:
-            - ubuntu-toolchain-r-test
-
-    - env: TARGET_X=i686-unknown-linux-gnu  FEATURES_X=--features=rsa_signing MODE_X=RELWITHDEBINFO KCOV=0
-      rust: nightly
-      os: linux
+      dist: trusty
       addons:
         apt:
           packages:
@@ -697,6 +333,7 @@ matrix:
     - env: TARGET_X=i686-unknown-linux-gnu  FEATURES_X= MODE_X=RELWITHDEBINFO KCOV=0
       rust: nightly
       os: linux
+      dist: trusty
       addons:
         apt:
           packages:
@@ -705,85 +342,34 @@ matrix:
           sources:
             - ubuntu-toolchain-r-test
 
-    - env: TARGET_X=i686-unknown-linux-gnu CC_X=clang-5.0 FEATURES_X=--features=rsa_signing MODE_X=DEBUG KCOV=0
+    - env: TARGET_X=i686-unknown-linux-gnu CC_X=clang FEATURES_X= MODE_X=DEBUG KCOV=0
       rust: nightly
       os: linux
+      dist: trusty
       addons:
         apt:
           packages:
-            - clang-5.0
             - gcc-multilib
             - libc6-dev-i386
           sources:
-            - llvm-toolchain-trusty-5.0
             - ubuntu-toolchain-r-test
 
-    - env: TARGET_X=i686-unknown-linux-gnu CC_X=clang-5.0 FEATURES_X= MODE_X=DEBUG KCOV=0
+    - env: TARGET_X=i686-unknown-linux-gnu CC_X=clang FEATURES_X= MODE_X=RELWITHDEBINFO KCOV=0
       rust: nightly
       os: linux
+      dist: trusty
       addons:
         apt:
           packages:
-            - clang-5.0
             - gcc-multilib
             - libc6-dev-i386
-          sources:
-            - llvm-toolchain-trusty-5.0
-            - ubuntu-toolchain-r-test
-
-    - env: TARGET_X=i686-unknown-linux-gnu CC_X=clang-5.0 FEATURES_X=--features=rsa_signing MODE_X=RELWITHDEBINFO KCOV=0
-      rust: nightly
-      os: linux
-      addons:
-        apt:
-          packages:
-            - clang-5.0
-            - gcc-multilib
-            - libc6-dev-i386
-          sources:
-            - llvm-toolchain-trusty-5.0
-            - ubuntu-toolchain-r-test
-
-    - env: TARGET_X=i686-unknown-linux-gnu CC_X=clang-5.0 FEATURES_X= MODE_X=RELWITHDEBINFO KCOV=0
-      rust: nightly
-      os: linux
-      addons:
-        apt:
-          packages:
-            - clang-5.0
-            - gcc-multilib
-            - libc6-dev-i386
-          sources:
-            - llvm-toolchain-trusty-5.0
-            - ubuntu-toolchain-r-test
-
-    - env: TARGET_X=i686-unknown-linux-gnu CC_X=gcc-7 FEATURES_X=--features=rsa_signing MODE_X=DEBUG KCOV=0
-      rust: nightly
-      os: linux
-      addons:
-        apt:
-          packages:
-            - gcc-7
-            - gcc-7-multilib
-            - linux-libc-dev:i386
           sources:
             - ubuntu-toolchain-r-test
 
     - env: TARGET_X=i686-unknown-linux-gnu CC_X=gcc-7 FEATURES_X= MODE_X=DEBUG KCOV=0
       rust: nightly
       os: linux
-      addons:
-        apt:
-          packages:
-            - gcc-7
-            - gcc-7-multilib
-            - linux-libc-dev:i386
-          sources:
-            - ubuntu-toolchain-r-test
-
-    - env: TARGET_X=i686-unknown-linux-gnu CC_X=gcc-7 FEATURES_X=--features=rsa_signing MODE_X=RELWITHDEBINFO KCOV=0
-      rust: nightly
-      os: linux
+      dist: trusty
       addons:
         apt:
           packages:
@@ -796,6 +382,7 @@ matrix:
     - env: TARGET_X=i686-unknown-linux-gnu CC_X=gcc-7 FEATURES_X= MODE_X=RELWITHDEBINFO KCOV=0
       rust: nightly
       os: linux
+      dist: trusty
       addons:
         apt:
           packages:
@@ -805,37 +392,10 @@ matrix:
           sources:
             - ubuntu-toolchain-r-test
 
-    - env: TARGET_X=arm-unknown-linux-gnueabihf CC_X=arm-linux-gnueabihf-gcc FEATURES_X=--features=rsa_signing MODE_X=DEBUG KCOV=0
-      rust: nightly
-      os: linux
-      dist: trusty
-      sudo: required
-      addons:
-        apt:
-          packages:
-            - gcc-arm-linux-gnueabihf
-            - libc6-dev-armhf-cross
-          sources:
-            - ubuntu-toolchain-r-test
-
     - env: TARGET_X=arm-unknown-linux-gnueabihf CC_X=arm-linux-gnueabihf-gcc FEATURES_X= MODE_X=DEBUG KCOV=0
       rust: nightly
       os: linux
       dist: trusty
-      sudo: required
-      addons:
-        apt:
-          packages:
-            - gcc-arm-linux-gnueabihf
-            - libc6-dev-armhf-cross
-          sources:
-            - ubuntu-toolchain-r-test
-
-    - env: TARGET_X=arm-unknown-linux-gnueabihf CC_X=arm-linux-gnueabihf-gcc FEATURES_X=--features=rsa_signing MODE_X=RELWITHDEBINFO KCOV=0
-      rust: nightly
-      os: linux
-      dist: trusty
-      sudo: required
       addons:
         apt:
           packages:
@@ -848,7 +408,6 @@ matrix:
       rust: nightly
       os: linux
       dist: trusty
-      sudo: required
       addons:
         apt:
           packages:
@@ -857,161 +416,58 @@ matrix:
           sources:
             - ubuntu-toolchain-r-test
 
-    - env: TARGET_X=x86_64-apple-darwin  FEATURES_X=--features=rsa_signing MODE_X=DEBUG KCOV=0
-      rust: beta
-      os: osx
-      osx_image: xcode9.3
-
     - env: TARGET_X=x86_64-apple-darwin  FEATURES_X= MODE_X=DEBUG KCOV=0
       rust: beta
       os: osx
-      osx_image: xcode9.3
-
-    - env: TARGET_X=x86_64-apple-darwin  FEATURES_X=--features=rsa_signing MODE_X=RELWITHDEBINFO KCOV=0
-      rust: beta
-      os: osx
-      osx_image: xcode9.3
+      osx_image: xcode10.1
 
     - env: TARGET_X=x86_64-apple-darwin  FEATURES_X= MODE_X=RELWITHDEBINFO KCOV=0
       rust: beta
       os: osx
-      osx_image: xcode9.3
-
-    - env: TARGET_X=armv7-linux-androideabi CC_X=arm-linux-androideabi-clang FEATURES_X=--features=rsa_signing MODE_X=DEBUG KCOV=0
-      rust: beta
-      os: linux
-      dist: trusty
-      sudo: required
-      addons:
-        apt:
-          packages:
-            - expect
-            - openjdk-6-jre-headless
-          sources:
-            - ubuntu-toolchain-r-test
+      osx_image: xcode10.1
 
     - env: TARGET_X=armv7-linux-androideabi CC_X=arm-linux-androideabi-clang FEATURES_X= MODE_X=DEBUG KCOV=0
       rust: beta
       os: linux
       dist: trusty
-      sudo: required
       addons:
         apt:
           packages:
             - expect
-            - openjdk-6-jre-headless
-          sources:
-            - ubuntu-toolchain-r-test
-
-    - env: TARGET_X=armv7-linux-androideabi CC_X=arm-linux-androideabi-clang FEATURES_X=--features=rsa_signing MODE_X=RELWITHDEBINFO KCOV=0
-      rust: beta
-      os: linux
-      dist: trusty
-      sudo: required
-      addons:
-        apt:
-          packages:
-            - expect
-            - openjdk-6-jre-headless
-          sources:
-            - ubuntu-toolchain-r-test
 
     - env: TARGET_X=armv7-linux-androideabi CC_X=arm-linux-androideabi-clang FEATURES_X= MODE_X=RELWITHDEBINFO KCOV=0
       rust: beta
       os: linux
       dist: trusty
-      sudo: required
       addons:
         apt:
           packages:
             - expect
-            - openjdk-6-jre-headless
-          sources:
-            - ubuntu-toolchain-r-test
-
-    - env: TARGET_X=x86_64-unknown-linux-gnu  FEATURES_X=--features=rsa_signing MODE_X=DEBUG KCOV=0
-      rust: beta
-      os: linux
 
     - env: TARGET_X=x86_64-unknown-linux-gnu  FEATURES_X= MODE_X=DEBUG KCOV=0
       rust: beta
       os: linux
-
-    - env: TARGET_X=x86_64-unknown-linux-gnu  FEATURES_X=--features=rsa_signing MODE_X=RELWITHDEBINFO KCOV=0
-      rust: beta
-      os: linux
+      dist: trusty
 
     - env: TARGET_X=x86_64-unknown-linux-gnu  FEATURES_X= MODE_X=RELWITHDEBINFO KCOV=0
       rust: beta
       os: linux
+      dist: trusty
 
-    - env: TARGET_X=x86_64-unknown-linux-gnu CC_X=clang-5.0 FEATURES_X=--features=rsa_signing MODE_X=DEBUG KCOV=0
+    - env: TARGET_X=x86_64-unknown-linux-gnu CC_X=clang FEATURES_X= MODE_X=DEBUG KCOV=0
       rust: beta
       os: linux
-      addons:
-        apt:
-          packages:
-            - clang-5.0
-          sources:
-            - llvm-toolchain-trusty-5.0
-            - ubuntu-toolchain-r-test
+      dist: trusty
 
-    - env: TARGET_X=x86_64-unknown-linux-gnu CC_X=clang-5.0 FEATURES_X= MODE_X=DEBUG KCOV=0
+    - env: TARGET_X=x86_64-unknown-linux-gnu CC_X=clang FEATURES_X= MODE_X=RELWITHDEBINFO KCOV=0
       rust: beta
       os: linux
-      addons:
-        apt:
-          packages:
-            - clang-5.0
-          sources:
-            - llvm-toolchain-trusty-5.0
-            - ubuntu-toolchain-r-test
-
-    - env: TARGET_X=x86_64-unknown-linux-gnu CC_X=clang-5.0 FEATURES_X=--features=rsa_signing MODE_X=RELWITHDEBINFO KCOV=0
-      rust: beta
-      os: linux
-      addons:
-        apt:
-          packages:
-            - clang-5.0
-          sources:
-            - llvm-toolchain-trusty-5.0
-            - ubuntu-toolchain-r-test
-
-    - env: TARGET_X=x86_64-unknown-linux-gnu CC_X=clang-5.0 FEATURES_X= MODE_X=RELWITHDEBINFO KCOV=0
-      rust: beta
-      os: linux
-      addons:
-        apt:
-          packages:
-            - clang-5.0
-          sources:
-            - llvm-toolchain-trusty-5.0
-            - ubuntu-toolchain-r-test
-
-    - env: TARGET_X=x86_64-unknown-linux-gnu CC_X=gcc-7 FEATURES_X=--features=rsa_signing MODE_X=DEBUG KCOV=0
-      rust: beta
-      os: linux
-      addons:
-        apt:
-          packages:
-            - gcc-7
-          sources:
-            - ubuntu-toolchain-r-test
+      dist: trusty
 
     - env: TARGET_X=x86_64-unknown-linux-gnu CC_X=gcc-7 FEATURES_X= MODE_X=DEBUG KCOV=0
       rust: beta
       os: linux
-      addons:
-        apt:
-          packages:
-            - gcc-7
-          sources:
-            - ubuntu-toolchain-r-test
-
-    - env: TARGET_X=x86_64-unknown-linux-gnu CC_X=gcc-7 FEATURES_X=--features=rsa_signing MODE_X=RELWITHDEBINFO KCOV=0
-      rust: beta
-      os: linux
+      dist: trusty
       addons:
         apt:
           packages:
@@ -1022,6 +478,7 @@ matrix:
     - env: TARGET_X=x86_64-unknown-linux-gnu CC_X=gcc-7 FEATURES_X= MODE_X=RELWITHDEBINFO KCOV=0
       rust: beta
       os: linux
+      dist: trusty
       addons:
         apt:
           packages:
@@ -1029,37 +486,10 @@ matrix:
           sources:
             - ubuntu-toolchain-r-test
 
-    - env: TARGET_X=aarch64-unknown-linux-gnu CC_X=aarch64-linux-gnu-gcc FEATURES_X=--features=rsa_signing MODE_X=DEBUG KCOV=0
-      rust: beta
-      os: linux
-      dist: trusty
-      sudo: required
-      addons:
-        apt:
-          packages:
-            - gcc-aarch64-linux-gnu
-            - libc6-dev-arm64-cross
-          sources:
-            - ubuntu-toolchain-r-test
-
     - env: TARGET_X=aarch64-unknown-linux-gnu CC_X=aarch64-linux-gnu-gcc FEATURES_X= MODE_X=DEBUG KCOV=0
       rust: beta
       os: linux
       dist: trusty
-      sudo: required
-      addons:
-        apt:
-          packages:
-            - gcc-aarch64-linux-gnu
-            - libc6-dev-arm64-cross
-          sources:
-            - ubuntu-toolchain-r-test
-
-    - env: TARGET_X=aarch64-unknown-linux-gnu CC_X=aarch64-linux-gnu-gcc FEATURES_X=--features=rsa_signing MODE_X=RELWITHDEBINFO KCOV=0
-      rust: beta
-      os: linux
-      dist: trusty
-      sudo: required
       addons:
         apt:
           packages:
@@ -1072,7 +502,6 @@ matrix:
       rust: beta
       os: linux
       dist: trusty
-      sudo: required
       addons:
         apt:
           packages:
@@ -1081,31 +510,10 @@ matrix:
           sources:
             - ubuntu-toolchain-r-test
 
-    - env: TARGET_X=i686-unknown-linux-gnu  FEATURES_X=--features=rsa_signing MODE_X=DEBUG KCOV=0
-      rust: beta
-      os: linux
-      addons:
-        apt:
-          packages:
-            - gcc-multilib
-            - libc6-dev-i386
-          sources:
-            - ubuntu-toolchain-r-test
-
     - env: TARGET_X=i686-unknown-linux-gnu  FEATURES_X= MODE_X=DEBUG KCOV=0
       rust: beta
       os: linux
-      addons:
-        apt:
-          packages:
-            - gcc-multilib
-            - libc6-dev-i386
-          sources:
-            - ubuntu-toolchain-r-test
-
-    - env: TARGET_X=i686-unknown-linux-gnu  FEATURES_X=--features=rsa_signing MODE_X=RELWITHDEBINFO KCOV=0
-      rust: beta
-      os: linux
+      dist: trusty
       addons:
         apt:
           packages:
@@ -1117,6 +525,7 @@ matrix:
     - env: TARGET_X=i686-unknown-linux-gnu  FEATURES_X= MODE_X=RELWITHDEBINFO KCOV=0
       rust: beta
       os: linux
+      dist: trusty
       addons:
         apt:
           packages:
@@ -1125,85 +534,34 @@ matrix:
           sources:
             - ubuntu-toolchain-r-test
 
-    - env: TARGET_X=i686-unknown-linux-gnu CC_X=clang-5.0 FEATURES_X=--features=rsa_signing MODE_X=DEBUG KCOV=0
+    - env: TARGET_X=i686-unknown-linux-gnu CC_X=clang FEATURES_X= MODE_X=DEBUG KCOV=0
       rust: beta
       os: linux
+      dist: trusty
       addons:
         apt:
           packages:
-            - clang-5.0
             - gcc-multilib
             - libc6-dev-i386
           sources:
-            - llvm-toolchain-trusty-5.0
             - ubuntu-toolchain-r-test
 
-    - env: TARGET_X=i686-unknown-linux-gnu CC_X=clang-5.0 FEATURES_X= MODE_X=DEBUG KCOV=0
+    - env: TARGET_X=i686-unknown-linux-gnu CC_X=clang FEATURES_X= MODE_X=RELWITHDEBINFO KCOV=0
       rust: beta
       os: linux
+      dist: trusty
       addons:
         apt:
           packages:
-            - clang-5.0
             - gcc-multilib
             - libc6-dev-i386
-          sources:
-            - llvm-toolchain-trusty-5.0
-            - ubuntu-toolchain-r-test
-
-    - env: TARGET_X=i686-unknown-linux-gnu CC_X=clang-5.0 FEATURES_X=--features=rsa_signing MODE_X=RELWITHDEBINFO KCOV=0
-      rust: beta
-      os: linux
-      addons:
-        apt:
-          packages:
-            - clang-5.0
-            - gcc-multilib
-            - libc6-dev-i386
-          sources:
-            - llvm-toolchain-trusty-5.0
-            - ubuntu-toolchain-r-test
-
-    - env: TARGET_X=i686-unknown-linux-gnu CC_X=clang-5.0 FEATURES_X= MODE_X=RELWITHDEBINFO KCOV=0
-      rust: beta
-      os: linux
-      addons:
-        apt:
-          packages:
-            - clang-5.0
-            - gcc-multilib
-            - libc6-dev-i386
-          sources:
-            - llvm-toolchain-trusty-5.0
-            - ubuntu-toolchain-r-test
-
-    - env: TARGET_X=i686-unknown-linux-gnu CC_X=gcc-7 FEATURES_X=--features=rsa_signing MODE_X=DEBUG KCOV=0
-      rust: beta
-      os: linux
-      addons:
-        apt:
-          packages:
-            - gcc-7
-            - gcc-7-multilib
-            - linux-libc-dev:i386
           sources:
             - ubuntu-toolchain-r-test
 
     - env: TARGET_X=i686-unknown-linux-gnu CC_X=gcc-7 FEATURES_X= MODE_X=DEBUG KCOV=0
       rust: beta
       os: linux
-      addons:
-        apt:
-          packages:
-            - gcc-7
-            - gcc-7-multilib
-            - linux-libc-dev:i386
-          sources:
-            - ubuntu-toolchain-r-test
-
-    - env: TARGET_X=i686-unknown-linux-gnu CC_X=gcc-7 FEATURES_X=--features=rsa_signing MODE_X=RELWITHDEBINFO KCOV=0
-      rust: beta
-      os: linux
+      dist: trusty
       addons:
         apt:
           packages:
@@ -1216,6 +574,7 @@ matrix:
     - env: TARGET_X=i686-unknown-linux-gnu CC_X=gcc-7 FEATURES_X= MODE_X=RELWITHDEBINFO KCOV=0
       rust: beta
       os: linux
+      dist: trusty
       addons:
         apt:
           packages:
@@ -1225,37 +584,10 @@ matrix:
           sources:
             - ubuntu-toolchain-r-test
 
-    - env: TARGET_X=arm-unknown-linux-gnueabihf CC_X=arm-linux-gnueabihf-gcc FEATURES_X=--features=rsa_signing MODE_X=DEBUG KCOV=0
-      rust: beta
-      os: linux
-      dist: trusty
-      sudo: required
-      addons:
-        apt:
-          packages:
-            - gcc-arm-linux-gnueabihf
-            - libc6-dev-armhf-cross
-          sources:
-            - ubuntu-toolchain-r-test
-
     - env: TARGET_X=arm-unknown-linux-gnueabihf CC_X=arm-linux-gnueabihf-gcc FEATURES_X= MODE_X=DEBUG KCOV=0
       rust: beta
       os: linux
       dist: trusty
-      sudo: required
-      addons:
-        apt:
-          packages:
-            - gcc-arm-linux-gnueabihf
-            - libc6-dev-armhf-cross
-          sources:
-            - ubuntu-toolchain-r-test
-
-    - env: TARGET_X=arm-unknown-linux-gnueabihf CC_X=arm-linux-gnueabihf-gcc FEATURES_X=--features=rsa_signing MODE_X=RELWITHDEBINFO KCOV=0
-      rust: beta
-      os: linux
-      dist: trusty
-      sudo: required
       addons:
         apt:
           packages:
@@ -1268,7 +600,6 @@ matrix:
       rust: beta
       os: linux
       dist: trusty
-      sudo: required
       addons:
         apt:
           packages:

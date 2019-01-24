@@ -28,12 +28,11 @@
     unused_qualifications,
     unused_results,
     variant_size_differences,
-    warnings,
+    warnings
 )]
 
-extern crate ring;
-
 use ring::{digest, error, pbkdf2, test};
+use std::num::NonZeroU32;
 
 #[test]
 pub fn pbkdf2_tests() {
@@ -41,48 +40,37 @@ pub fn pbkdf2_tests() {
         assert_eq!(section, "");
         let digest_alg = &test_case.consume_digest_alg("Hash").unwrap();
         let iterations = test_case.consume_usize("c");
+        let iterations = NonZeroU32::new(iterations as u32).unwrap();
         let secret = test_case.consume_bytes("P");
         let salt = test_case.consume_bytes("S");
         let dk = test_case.consume_bytes("DK");
         let verify_expected_result = test_case.consume_string("Verify");
-        let verify_expected_result =
-            match verify_expected_result.as_str() {
-                "OK" => Ok(()),
-                "Err" => Err(error::Unspecified),
-                _ => panic!("Unsupported value of \"Verify\""),
-            };
+        let verify_expected_result = match verify_expected_result.as_str() {
+            "OK" => Ok(()),
+            "Err" => Err(error::Unspecified),
+            _ => panic!("Unsupported value of \"Verify\""),
+        };
 
         {
             let mut out = vec![0u8; dk.len()];
-            pbkdf2::derive(digest_alg, iterations as u32, &salt, &secret,
-                           &mut out);
-            assert_eq!(dk == out,
-                       verify_expected_result.is_ok() || dk.is_empty());
+            pbkdf2::derive(digest_alg, iterations, &salt, &secret, &mut out);
+            assert_eq!(dk == out, verify_expected_result.is_ok() || dk.is_empty());
         }
 
-        assert_eq!(pbkdf2::verify(digest_alg, iterations as u32, &salt, &secret,
-                                  &dk),
-                   verify_expected_result);
+        assert_eq!(
+            pbkdf2::verify(digest_alg, iterations, &salt, &secret, &dk),
+            verify_expected_result
+        );
 
         Ok(())
     });
-}
-
-#[test]
-#[should_panic]
-pub fn pbkdf2_zero_iterations() {
-    let secret = "ZeroIterationsTest".as_bytes();
-    let iterations: u32 = 0;
-    let salt = "salt".as_bytes();
-    let mut out = vec![0u8; 2];
-    pbkdf2::derive(&digest::SHA256, iterations, &salt, &secret, &mut out);
 }
 
 // Control for pkbdf2_zero_iterations
 #[test]
 pub fn pbkdf2_one_iteration() {
     let secret = "ZeroIterationsTest".as_bytes();
-    let iterations: u32 = 1;
+    let iterations = NonZeroU32::new(1).unwrap();
     let salt = "salt".as_bytes();
     let mut out = vec![0u8; 2];
     pbkdf2::derive(&digest::SHA256, iterations, &salt, &secret, &mut out);

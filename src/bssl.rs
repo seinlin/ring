@@ -12,16 +12,17 @@
 // OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
 // CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
-use {c, error};
+use crate::{c, error};
 
-/// A `c::int` returned from a foreign function containing **1** if the function was successful
-/// or **0** if an error occurred. This is the convention used by C code in `ring`.
+/// A `c::int` returned from a foreign function containing **1** if the function
+/// was successful or **0** if an error occurred. This is the convention used by
+/// C code in `ring`.
 #[derive(Clone, Copy, Debug)]
 #[must_use]
 #[repr(transparent)]
 pub struct Result(c::int);
 
-impl From<Result> for ::std::result::Result<(), error::Unspecified> {
+impl From<Result> for core::result::Result<(), error::Unspecified> {
     fn from(ret: Result) -> Self {
         match ret.0 {
             1 => Ok(()),
@@ -44,34 +45,35 @@ macro_rules! bssl_test {
     ( $fn_name:ident, $bssl_test_main_fn_name:ident ) => {
         #[test]
         fn $fn_name() {
-            use $crate::{c, init};
-            extern {
+            use $crate::{c, cpu};
+            extern "C" {
                 #[must_use]
                 fn $bssl_test_main_fn_name() -> c::int;
             }
 
-            init::init_once();
-            ::std::env::set_current_dir(::test::ring_src_path()).unwrap();
+            cpu::cache_detected_features();
+            ::std::env::set_current_dir(crate::test::ring_src_path()).unwrap();
 
-            let result = unsafe {
-                $bssl_test_main_fn_name()
-            };
+            let result = unsafe { $bssl_test_main_fn_name() };
             assert_eq!(result, 0);
         }
-    }
+    };
 }
 
 #[cfg(test)]
 mod tests {
     mod result {
-        use {bssl, c};
+        use crate::{bssl, c};
         use core::mem;
 
         #[test]
         fn size_and_alignment() {
             type Underlying = c::int;
             assert_eq!(mem::size_of::<bssl::Result>(), mem::size_of::<Underlying>());
-            assert_eq!(mem::align_of::<bssl::Result>(), mem::align_of::<Underlying>());
+            assert_eq!(
+                mem::align_of::<bssl::Result>(),
+                mem::align_of::<Underlying>()
+            );
         }
 
         #[test]

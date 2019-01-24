@@ -106,8 +106,6 @@
  * (eay@cryptsoft.com).  This product includes software written by Tim
  * Hudson (tjh@cryptsoft.com). */
 
-#include <assert.h>
-
 #include "internal.h"
 #include "../../internal.h"
 
@@ -119,10 +117,11 @@ int GFp_bn_from_montgomery_in_place(BN_ULONG r[], size_t num_r, BN_ULONG a[],
                                     size_t num_n,
                                     const BN_ULONG n0_[BN_MONT_CTX_N0_LIMBS]);
 
-OPENSSL_COMPILE_ASSERT(BN_MONT_CTX_N0_LIMBS == 1 || BN_MONT_CTX_N0_LIMBS == 2,
-                       BN_MONT_CTX_N0_LIMBS_VALUE_INVALID);
-OPENSSL_COMPILE_ASSERT(sizeof(BN_ULONG) * BN_MONT_CTX_N0_LIMBS ==
-                       sizeof(uint64_t), BN_MONT_CTX_set_64_bit_mismatch);
+OPENSSL_STATIC_ASSERT(BN_MONT_CTX_N0_LIMBS == 1 || BN_MONT_CTX_N0_LIMBS == 2,
+  "BN_MONT_CTX_N0_LIMBS value is invalid");
+OPENSSL_STATIC_ASSERT(
+  sizeof(BN_ULONG) * BN_MONT_CTX_N0_LIMBS == sizeof(uint64_t),
+  "uint64_t is insufficient precision for n0");
 
 int GFp_bn_from_montgomery_in_place(BN_ULONG r[], size_t num_r, BN_ULONG a[],
                                     size_t num_a, const BN_ULONG n[],
@@ -160,14 +159,6 @@ int GFp_bn_from_montgomery_in_place(BN_ULONG r[], size_t num_r, BN_ULONG a[],
   for (size_t i = 0; i < num_n; i++) {
     r[i] = constant_time_select_w(v, a[i], r[i]);
     a[i] = 0;
-  }
-  return 1;
-}
-
-int GFp_bn_mul_mont_check_num_limbs(size_t num_limbs) {
-  // GFp_bn_mul_mont requires at least four limbs, at least for x86.
-  if (num_limbs < 4) {
-    return 0;
   }
   return 1;
 }

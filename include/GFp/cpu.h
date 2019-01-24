@@ -63,11 +63,6 @@
 
 #include <GFp/base.h>
 
-#if defined(__cplusplus)
-extern "C" {
-#endif
-
-
 // Runtime CPU feature support
 
 
@@ -116,18 +111,13 @@ static inline int GFp_is_NEON_capable(void) {
   // applications will not use that buggy CPU but still support Android users
   // that do, even when the compiler is instructed to freely emit NEON code.
   // See https://crbug.com/341598 and https://crbug.com/606629.
-#if defined(__ARM_NEON__) && (!defined(OPENSSL_ARM) || !defined(__ANDROID__))
+#if (defined(__ARM_NEON__) || defined(__ARM_NEON)) \
+    && (!defined(OPENSSL_ARM) || !defined(__ANDROID__))
   return 1;
 #else
   return GFp_is_NEON_capable_at_runtime();
 #endif
 }
-
-#if defined(OPENSSL_ARM)
-// GFp_has_broken_NEON returns one if the current CPU is known to have a
-// broken NEON unit. See https://crbug.com/341598.
-OPENSSL_EXPORT int GFp_has_broken_NEON(void);
-#endif
 
 // GFp_is_ARMv8_AES_capable returns true if the current CPU supports the
 // ARMv8 AES instruction.
@@ -140,7 +130,8 @@ int GFp_is_ARMv8_PMULL_capable(void);
 #else
 
 static inline int GFp_is_NEON_capable(void) {
-#if defined(OPENSSL_STATIC_ARMCAP_NEON) || defined(__ARM_NEON__)
+#if defined(OPENSSL_STATIC_ARMCAP_NEON) || \
+    (defined(__ARM_NEON__) || defined(__ARM_NEON))
   return 1;
 #else
   return 0;
@@ -173,10 +164,5 @@ static inline int GFp_is_ARMv8_PMULL_capable(void) {
 int GFp_is_PPC64LE_vcrypto_capable(void);
 
 #endif  // OPENSSL_PPC64LE
-
-
-#if defined(__cplusplus)
-}  // extern C
-#endif
 
 #endif  // OPENSSL_HEADER_CPU_H
