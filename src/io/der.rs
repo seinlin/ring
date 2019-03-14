@@ -41,11 +41,19 @@ pub enum Tag {
     ContextSpecificConstructed3 = CONTEXT_SPECIFIC | CONSTRUCTED | 3,
 }
 
+impl From<Tag> for usize {
+    fn from(tag: Tag) -> Self { tag as Self }
+}
+
+impl From<Tag> for u8 {
+    fn from(tag: Tag) -> Self { tag as Self } // XXX: narrowing conversion.
+}
+
 pub fn expect_tag_and_get_value<'a>(
     input: &mut untrusted::Reader<'a>, tag: Tag,
 ) -> Result<untrusted::Input<'a>, error::Unspecified> {
     let (actual_tag, inner) = read_tag_and_get_value(input)?;
-    if (tag as usize) != (actual_tag as usize) {
+    if usize::from(tag) != usize::from(actual_tag) {
         return Err(error::Unspecified);
     }
     Ok(inner)
@@ -63,17 +71,17 @@ pub fn read_tag_and_get_value<'a>(
     // is encoded in the seven remaining bits of that byte. Otherwise, those
     // seven bits represent the number of bytes used to encode the length.
     let length = match input.read_byte()? {
-        n if (n & 0x80) == 0 => n as usize,
+        n if (n & 0x80) == 0 => usize::from(n),
         0x81 => {
             let second_byte = input.read_byte()?;
             if second_byte < 128 {
                 return Err(error::Unspecified); // Not the canonical encoding.
             }
-            second_byte as usize
+            usize::from(second_byte)
         },
         0x82 => {
-            let second_byte = input.read_byte()? as usize;
-            let third_byte = input.read_byte()? as usize;
+            let second_byte = usize::from(input.read_byte()?);
+            let third_byte = usize::from(input.read_byte()?);
             let combined = (second_byte << 8) | third_byte;
             if combined < 256 {
                 return Err(error::Unspecified); // Not the canonical encoding.
@@ -211,9 +219,9 @@ mod tests {
         assert!(r.is_err());
     }
 
-    static ZERO_INTEGER: &'static [u8] = &[0x02, 0x01, 0x00];
+    static ZERO_INTEGER: &[u8] = &[0x02, 0x01, 0x00];
 
-    static GOOD_POSITIVE_INTEGERS: &'static [(&'static [u8], u8)] = &[
+    static GOOD_POSITIVE_INTEGERS: &[(&[u8], u8)] = &[
         (&[0x02, 0x01, 0x01], 0x01),
         (&[0x02, 0x01, 0x02], 0x02),
         (&[0x02, 0x01, 0x7e], 0x7e),
@@ -226,7 +234,7 @@ mod tests {
         (&[0x02, 0x02, 0x00, 0xff], 0xff),
     ];
 
-    static BAD_NONNEGATIVE_INTEGERS: &'static [&'static [u8]] = &[
+    static BAD_NONNEGATIVE_INTEGERS: &[&[u8]] = &[
         &[],           // At end of input
         &[0x02],       // Tag only
         &[0x02, 0x00], // Empty value

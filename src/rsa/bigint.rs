@@ -42,7 +42,7 @@
 
 use crate::{
     arithmetic::montgomery::*,
-    bits, bssl, c, error,
+    bits, bssl, error,
     limb::{self, Limb, LimbMask, LIMB_BITS, LIMB_BYTES},
 };
 use core::{
@@ -50,6 +50,7 @@ use core::{
     marker::PhantomData,
     ops::{Deref, DerefMut},
 };
+use libc::size_t;
 use untrusted;
 
 pub unsafe trait Prime {}
@@ -290,7 +291,7 @@ impl<M> Modulus<M> {
         };
 
         Ok((
-            Modulus {
+            Self {
                 limbs: n,
                 n0,
                 oneRR,
@@ -349,7 +350,7 @@ struct PartialModulus<'a, M> {
     m: PhantomData<M>,
 }
 
-impl<'a, M> PartialModulus<'a, M> {
+impl<M> PartialModulus<'_, M> {
     // TODO: XXX Avoid duplication with `Modulus`.
     fn zero(&self) -> Elem<M, R> {
         let width = Width {
@@ -380,7 +381,7 @@ pub struct Elem<M, E = Unencoded> {
 // is resolved or restrict `M: Clone` and `E: Clone`.
 impl<M, E> Clone for Elem<M, E> {
     fn clone(&self) -> Self {
-        Elem {
+        Self {
             limbs: self.limbs.clone(),
             encoding: self.encoding.clone(),
         }
@@ -467,7 +468,7 @@ where
 
 fn elem_mul_by_2<M, AF>(a: &mut Elem<M, AF>, m: &PartialModulus<M>) {
     extern "C" {
-        fn LIMBS_shl_mod(r: *mut Limb, a: *const Limb, m: *const Limb, num_limbs: c::size_t);
+        fn LIMBS_shl_mod(r: *mut Limb, a: *const Limb, m: *const Limb, num_limbs: size_t);
     }
     unsafe {
         LIMBS_shl_mod(
@@ -500,8 +501,8 @@ pub fn elem_reduced<Larger, Smaller: NotMuchSmallerModulus<Larger>>(
 ) -> Result<Elem<Smaller, RInverse>, error::Unspecified> {
     extern "C" {
         fn GFp_bn_from_montgomery_in_place(
-            r: *mut Limb, num_r: c::size_t, a: *mut Limb, num_a: c::size_t, n: *const Limb,
-            num_n: c::size_t, n0: &N0,
+            r: *mut Limb, num_r: size_t, a: *mut Limb, num_a: size_t, n: *const Limb,
+            num_n: size_t, n0: &N0,
         ) -> bssl::Result;
     }
 
@@ -550,7 +551,7 @@ pub fn elem_add<M, E>(mut a: Elem<M, E>, b: Elem<M, E>, m: &Modulus<M>) -> Elem<
     extern "C" {
         // `r` and `a` may alias.
         fn LIMBS_add_mod(
-            r: *mut Limb, a: *const Limb, b: *const Limb, m: *const Limb, num_limbs: c::size_t,
+            r: *mut Limb, a: *const Limb, b: *const Limb, m: *const Limb, num_limbs: size_t,
         );
     }
     unsafe {
@@ -570,7 +571,7 @@ pub fn elem_sub<M, E>(mut a: Elem<M, E>, b: &Elem<M, E>, m: &Modulus<M>) -> Elem
     extern "C" {
         // `r` and `a` may alias.
         fn LIMBS_sub_mod(
-            r: *mut Limb, a: *const Limb, b: *const Limb, m: *const Limb, num_limbs: c::size_t,
+            r: *mut Limb, a: *const Limb, b: *const Limb, m: *const Limb, num_limbs: size_t,
         );
     }
     unsafe {
@@ -596,7 +597,7 @@ impl<M> One<M, RR> {
     // values, using `LIMB_BITS` here, rather than `N0_LIMBS_USED * LIMB_BITS`,
     // is correct because R**2 will still be a multiple of the latter as
     // `N0_LIMBS_USED` is either one or two.
-    fn newRR(m: &PartialModulus<M>, m_bits: bits::BitLength) -> One<M, RR> {
+    fn newRR(m: &PartialModulus<M>, m_bits: bits::BitLength) -> Self {
         let m_bits = m_bits.as_usize_bits();
         let r = (m_bits + (LIMB_BITS - 1)) / LIMB_BITS * LIMB_BITS;
 
@@ -628,7 +629,7 @@ impl<M> One<M, RR> {
         }
         let RR = elem_exp_vartime_(base, exponent, m);
 
-        One(Elem {
+        Self(Elem {
             limbs: RR.limbs,
             encoding: PhantomData, // PhantomData<RR>
         })
@@ -688,7 +689,7 @@ impl PublicExponent {
             return Err(error::KeyRejected::too_large());
         }
 
-        Ok(PublicExponent(value))
+        Ok(Self(value))
     }
 }
 
@@ -775,7 +776,7 @@ impl<M> PrivateExponent<M> {
             return Err(error::Unspecified);
         }
 
-        Ok(PrivateExponent { limbs: dP })
+        Ok(Self { limbs: dP })
     }
 }
 
@@ -784,7 +785,7 @@ impl<M: Prime> PrivateExponent<M> {
     fn for_flt(p: &Modulus<M>) -> Self {
         let two = elem_add(p.one(), p.one(), p);
         let p_minus_2 = elem_sub(p.zero(), &two, p);
-        PrivateExponent {
+        Self {
             limbs: p_minus_2.limbs,
         }
     }
@@ -806,7 +807,7 @@ pub fn elem_exp_consttime<M>(
     fn gather<M>(table: &[Limb], i: Window, r: &mut Elem<M, R>) {
         extern "C" {
             fn LIMBS_select_512_32(
-                r: *mut Limb, table: *const Limb, num_limbs: c::size_t, i: Window,
+                r: *mut Limb, table: *const Limb, num_limbs: size_t, i: Window,
             ) -> bssl::Result;
         }
         Result::from(unsafe {
@@ -922,7 +923,7 @@ pub fn elem_exp_consttime<M>(
 
     fn scatter(table: &mut [Limb], state: &[Limb], i: Window, num_limbs: usize) {
         extern "C" {
-            fn GFp_bn_scatter5(a: *const Limb, a_len: c::size_t, table: *mut Limb, i: Window);
+            fn GFp_bn_scatter5(a: *const Limb, a_len: size_t, table: *mut Limb, i: Window);
         }
         unsafe {
             GFp_bn_scatter5(
@@ -936,7 +937,7 @@ pub fn elem_exp_consttime<M>(
 
     fn gather(table: &[Limb], state: &mut [Limb], i: Window, num_limbs: usize) {
         extern "C" {
-            fn GFp_bn_gather5(r: *mut Limb, a_len: c::size_t, table: *const Limb, i: Window);
+            fn GFp_bn_gather5(r: *mut Limb, a_len: size_t, table: *const Limb, i: Window);
         }
         unsafe {
             GFp_bn_gather5(
@@ -960,7 +961,7 @@ pub fn elem_exp_consttime<M>(
         extern "C" {
             fn GFp_bn_mul_mont_gather5(
                 rp: *mut Limb, ap: *const Limb, table: *const Limb, np: *const Limb, n0: &N0,
-                num: c::size_t, power: Window,
+                num: size_t, power: Window,
             );
         }
         unsafe {
@@ -980,7 +981,7 @@ pub fn elem_exp_consttime<M>(
         extern "C" {
             fn GFp_bn_power5(
                 r: *mut Limb, a: *const Limb, table: *const Limb, n: *const Limb, n0: &N0,
-                num: c::size_t, i: Window,
+                num: size_t, i: Window,
             );
         }
         unsafe {
@@ -1033,7 +1034,7 @@ pub fn elem_exp_consttime<M>(
     extern "C" {
         fn GFp_bn_from_montgomery(
             r: *mut Limb, a: *const Limb, not_used: *const Limb, n: *const Limb, n0: &N0,
-            num: c::size_t,
+            num: size_t,
         ) -> bssl::Result;
     }
     Result::from(unsafe {
@@ -1147,12 +1148,12 @@ impl From<u64> for N0 {
     fn from(n0: u64) -> Self {
         #[cfg(target_pointer_width = "64")]
         {
-            N0([n0, 0])
+            Self([n0, 0])
         }
 
         #[cfg(target_pointer_width = "32")]
         {
-            N0([n0 as Limb, (n0 >> LIMB_BITS) as Limb])
+            Self([n0 as Limb, (n0 >> LIMB_BITS) as Limb])
         }
     }
 }
@@ -1209,7 +1210,7 @@ fn limbs_mont_square(r: &mut [Limb], m: &[Limb], n0: &N0) {
 extern "C" {
     // `r` and/or 'a' and/or 'b' may alias.
     fn GFp_bn_mul_mont(
-        r: *mut Limb, a: *const Limb, b: *const Limb, n: *const Limb, n0: &N0, num_limbs: c::size_t,
+        r: *mut Limb, a: *const Limb, b: *const Limb, n: *const Limb, n0: &N0, num_limbs: size_t,
     );
 }
 
@@ -1224,8 +1225,8 @@ mod tests {
 
     #[test]
     fn test_elem_exp_consttime() {
-        test::from_file(
-            "src/rsa/bigint_elem_exp_consttime_tests.txt",
+        test::run(
+            test_file!("bigint_elem_exp_consttime_tests.txt"),
             |section, test_case| {
                 assert_eq!(section, "");
 
@@ -1253,28 +1254,31 @@ mod tests {
     // verification and signing tests.
     #[test]
     fn test_elem_mul() {
-        test::from_file("src/rsa/bigint_elem_mul_tests.txt", |section, test_case| {
-            assert_eq!(section, "");
+        test::run(
+            test_file!("bigint_elem_mul_tests.txt"),
+            |section, test_case| {
+                assert_eq!(section, "");
 
-            let m = consume_modulus::<M>(test_case, "M");
-            let expected_result = consume_elem(test_case, "ModMul", &m);
-            let a = consume_elem(test_case, "A", &m);
-            let b = consume_elem(test_case, "B", &m);
+                let m = consume_modulus::<M>(test_case, "M");
+                let expected_result = consume_elem(test_case, "ModMul", &m);
+                let a = consume_elem(test_case, "A", &m);
+                let b = consume_elem(test_case, "B", &m);
 
-            let b = into_encoded(b, &m);
-            let a = into_encoded(a, &m);
-            let actual_result = elem_mul(&a, b, &m);
-            let actual_result = actual_result.into_unencoded(&m);
-            assert_elem_eq(&actual_result, &expected_result);
+                let b = into_encoded(b, &m);
+                let a = into_encoded(a, &m);
+                let actual_result = elem_mul(&a, b, &m);
+                let actual_result = actual_result.into_unencoded(&m);
+                assert_elem_eq(&actual_result, &expected_result);
 
-            Ok(())
-        })
+                Ok(())
+            },
+        )
     }
 
     #[test]
     fn test_elem_squared() {
-        test::from_file(
-            "src/rsa/bigint_elem_squared_tests.txt",
+        test::run(
+            test_file!("bigint_elem_squared_tests.txt"),
             |section, test_case| {
                 assert_eq!(section, "");
 
@@ -1294,8 +1298,8 @@ mod tests {
 
     #[test]
     fn test_elem_reduced() {
-        test::from_file(
-            "src/rsa/bigint_elem_reduced_tests.txt",
+        test::run(
+            test_file!("bigint_elem_reduced_tests.txt"),
             |section, test_case| {
                 assert_eq!(section, "");
 
@@ -1320,8 +1324,8 @@ mod tests {
 
     #[test]
     fn test_elem_reduced_once() {
-        test::from_file(
-            "src/rsa/bigint_elem_reduced_once_tests.txt",
+        test::run(
+            test_file!("bigint_elem_reduced_once_tests.txt"),
             |section, test_case| {
                 assert_eq!(section, "");
 

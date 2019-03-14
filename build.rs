@@ -14,9 +14,9 @@
 
 //! Build the non-Rust components.
 
-#![deny(box_pointers)]
 #![forbid(
     anonymous_parameters,
+    box_pointers,
     legacy_directory_ownership,
     missing_copy_implementations,
     missing_debug_implementations,
@@ -55,7 +55,6 @@ const RING_SRCS: &[(&[&str], &str)] = &[
     (&[], "crypto/fipsmodule/bn/generic.c"),
     (&[], "crypto/fipsmodule/bn/montgomery.c"),
     (&[], "crypto/fipsmodule/bn/montgomery_inv.c"),
-    (&[], "crypto/fipsmodule/cipher/e_aes.c"),
     (&[], "crypto/crypto.c"),
     (&[], "crypto/fipsmodule/ec/ecp_nistz.c"),
     (&[], "crypto/fipsmodule/ec/ecp_nistz256.c"),
@@ -94,8 +93,6 @@ const RING_SRCS: &[(&[&str], &str)] = &[
     (&[X86_64], SHA512_X86_64),
 
     (&[AARCH64, ARM], "crypto/fipsmodule/aes/asm/aesv8-armx.pl"),
-    (&[AARCH64, ARM], "crypto/cpu-arm-linux.c"),
-    (&[AARCH64, ARM], "crypto/cpu-arm.c"),
     (&[AARCH64, ARM], "crypto/fipsmodule/modes/asm/ghashv8-armx.pl"),
 
     (&[ARM], "crypto/fipsmodule/aes/asm/aes-armv4.pl"),
@@ -111,7 +108,6 @@ const RING_SRCS: &[(&[&str], &str)] = &[
 
     (&[AARCH64], "crypto/fipsmodule/aes/aes.c"),
     (&[AARCH64], "crypto/fipsmodule/bn/asm/armv8-mont.pl"),
-    (&[AARCH64], "crypto/cpu-aarch64-linux.c"),
     (&[AARCH64], "crypto/chacha/asm/chacha-armv8.pl"),
     (&[AARCH64], "crypto/fipsmodule/ec/asm/ecp_nistz256-armv8.pl"),
     (&[AARCH64], "crypto/poly1305/asm/poly1305-armv8.pl"),
@@ -128,8 +124,7 @@ const RING_TEST_SRCS: &[&str] = &[("crypto/constant_time_test.c")];
 
 #[cfg_attr(rustfmt, rustfmt_skip)]
 const RING_INCLUDES: &[&str] =
-    &["crypto/fipsmodule/aes/internal.h",
-      "crypto/fipsmodule/bn/internal.h",
+    &["crypto/fipsmodule/bn/internal.h",
       "crypto/fipsmodule/ec/ecp_nistz256_table.inl",
       "crypto/fipsmodule/ec/ecp_nistz384.inl",
       "crypto/fipsmodule/ec/ecp_nistz.h",
@@ -146,6 +141,8 @@ const RING_INCLUDES: &[&str] =
       "include/GFp/cpu.h",
       "include/GFp/mem.h",
       "include/GFp/type_check.h",
+      "third_party/fiat/curve25519_32.h",
+      "third_party/fiat/curve25519_64.h",
       "third_party/fiat/curve25519_tables.h",
       "third_party/fiat/internal.h",
     ];
@@ -160,14 +157,13 @@ const RING_PERL_INCLUDES: &[&str] =
 
 const RING_BUILD_FILE: &[&str] = &["build.rs"];
 
-const PREGENERATED: &'static str = "pregenerated";
+const PREGENERATED: &str = "pregenerated";
 
 fn c_flags(target: &Target) -> &'static [&'static str] {
     if target.env != MSVC {
         static NON_MSVC_FLAGS: &[&str] = &[
             "-std=c1x", // GCC 4.6 requires "c1x" instead of "c11"
             "-Wbad-function-cast",
-            "-Wmissing-prototypes",
             "-Wnested-externs",
             "-Wstrict-prototypes",
         ];
@@ -192,7 +188,6 @@ fn cpp_flags(target: &Target) -> &'static [&'static str] {
             "-Wformat=2",
             "-Winline",
             "-Winvalid-pch",
-            "-Wmissing-declarations",
             "-Wmissing-field-initializers",
             "-Wmissing-include-dirs",
             // "-Wredundant-decls",
@@ -249,10 +244,10 @@ const ASM_TARGETS: &[(&str, Option<&str>, &str)] = &[
     ("arm", None, "linux32"),
 ];
 
-const WINDOWS: &'static str = "windows";
-const MSVC: &'static str = "msvc";
-const MSVC_OBJ_OPT: &'static str = "/Fo";
-const MSVC_OBJ_EXT: &'static str = "obj";
+const WINDOWS: &str = "windows";
+const MSVC: &str = "msvc";
+const MSVC_OBJ_OPT: &str = "/Fo";
+const MSVC_OBJ_EXT: &str = "obj";
 
 fn main() {
     if let Ok(package_name) = std::env::var("CARGO_PKG_NAME") {
@@ -319,7 +314,6 @@ fn pregenerate_asm_main() {
         perlasm(&perlasm_src_dsts, target_arch, perlasm_format, None);
 
         if target_os == Some(WINDOWS) {
-            //let lib_name = ring_asm_name(target_arch);
             let srcs = asm_srcs(perlasm_src_dsts);
             for src in srcs {
                 let src_path = PathBuf::from(src);
@@ -449,7 +443,6 @@ fn build_library(
     warnings_are_errors: bool, includes_modified: SystemTime,
 ) {
     // Compile all the (dirty) source files into object files.
-    #[allow(box_pointers)] // XXX
     let objs = additional_srcs
         .into_iter()
         .chain(srcs.into_iter())

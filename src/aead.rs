@@ -47,8 +47,8 @@ impl OpeningKey {
     #[inline]
     pub fn new(
         algorithm: &'static Algorithm, key_bytes: &[u8],
-    ) -> Result<OpeningKey, error::Unspecified> {
-        Ok(OpeningKey {
+    ) -> Result<Self, error::Unspecified> {
+        Ok(Self {
             key: Key::new(algorithm, key_bytes)?,
         })
     }
@@ -102,21 +102,8 @@ impl OpeningKey {
 /// and `ciphertext_and_tag_modified_in_place` because Rust's type system
 /// does not allow us to have two slices, one mutable and one immutable, that
 /// reference overlapping memory.)
-pub fn open_in_place<'a, A: AsRef<[u8]>>(
-    key: &OpeningKey, nonce: Nonce, Aad(aad): Aad<A>, in_prefix_len: usize,
-    ciphertext_and_tag_modified_in_place: &'a mut [u8],
-) -> Result<&'a mut [u8], error::Unspecified> {
-    open_in_place_(
-        key,
-        nonce,
-        Aad::from(aad.as_ref()),
-        in_prefix_len,
-        ciphertext_and_tag_modified_in_place,
-    )
-}
-
-fn open_in_place_<'a>(
-    key: &OpeningKey, nonce: Nonce, aad: Aad<&[u8]>, in_prefix_len: usize,
+pub fn open_in_place<'a>(
+    key: &OpeningKey, nonce: Nonce, aad: Aad, in_prefix_len: usize,
     ciphertext_and_tag_modified_in_place: &'a mut [u8],
 ) -> Result<&'a mut [u8], error::Unspecified> {
     let ciphertext_and_tag_len = ciphertext_and_tag_modified_in_place
@@ -129,8 +116,14 @@ fn open_in_place_<'a>(
     check_per_nonce_max_bytes(key.key.algorithm, ciphertext_len)?;
     let (in_out, received_tag) =
         ciphertext_and_tag_modified_in_place.split_at_mut(in_prefix_len + ciphertext_len);
-    let Tag(calculated_tag) =
-        (key.key.algorithm.open)(&key.key.inner, nonce, aad, in_prefix_len, in_out);
+    let Tag(calculated_tag) = (key.key.algorithm.open)(
+        &key.key.inner,
+        nonce,
+        aad,
+        in_prefix_len,
+        in_out,
+        key.key.cpu_features,
+    );
     if constant_time::verify_slices_are_equal(calculated_tag.as_ref(), received_tag).is_err() {
         // Zero out the plaintext so that it isn't accidentally leaked or used
         // after verification fails. It would be safest if we could check the
@@ -157,8 +150,8 @@ impl SealingKey {
     #[inline]
     pub fn new(
         algorithm: &'static Algorithm, key_bytes: &[u8],
-    ) -> Result<SealingKey, error::Unspecified> {
-        Ok(SealingKey {
+    ) -> Result<Self, error::Unspecified> {
+        Ok(Self {
             key: Key::new(algorithm, key_bytes)?,
         })
     }
@@ -185,20 +178,8 @@ impl SealingKey {
 /// also `MAX_TAG_LEN`.
 ///
 /// `aad` is the additional authenticated data, if any.
-pub fn seal_in_place<A: AsRef<[u8]>>(
-    key: &SealingKey, nonce: Nonce, Aad(aad): Aad<A>, in_out: &mut [u8], out_suffix_capacity: usize,
-) -> Result<usize, error::Unspecified> {
-    seal_in_place_(
-        key,
-        nonce,
-        Aad::from(aad.as_ref()),
-        in_out,
-        out_suffix_capacity,
-    )
-}
-
-fn seal_in_place_(
-    key: &SealingKey, nonce: Nonce, aad: Aad<&[u8]>, in_out: &mut [u8], out_suffix_capacity: usize,
+pub fn seal_in_place(
+    key: &SealingKey, nonce: Nonce, aad: Aad, in_out: &mut [u8], out_suffix_capacity: usize,
 ) -> Result<usize, error::Unspecified> {
     if out_suffix_capacity < key.key.algorithm.tag_len() {
         return Err(error::Unspecified);
@@ -211,7 +192,8 @@ fn seal_in_place_(
     let (in_out, tag_out) = in_out.split_at_mut(in_out_len);
 
     let tag_out: &mut [u8; TAG_LEN] = tag_out.try_into_()?;
-    let Tag(tag) = (key.key.algorithm.seal)(&key.key.inner, nonce, aad, in_out);
+    let Tag(tag) =
+        (key.key.algorithm.seal)(&key.key.inner, nonce, aad, in_out, key.key.cpu_features);
     tag_out.copy_from_slice(tag.as_ref());
 
     Ok(in_out_len + TAG_LEN)
@@ -220,17 +202,17 @@ fn seal_in_place_(
 /// The additionally authenticated data (AAD) for an opening or sealing
 /// operation. This data is authenticated but is **not** encrypted.
 #[repr(transparent)]
-pub struct Aad<A: AsRef<[u8]>>(A);
+pub struct Aad<'a>(&'a [u8]);
 
-impl<A: AsRef<[u8]>> Aad<A> {
-    /// Construct the `Aad` from the given bytes.
+impl<'a> Aad<'a> {
+    /// Construct the `Aad` by borrowing a contiguous sequence of bytes.
     #[inline]
-    pub fn from(aad: A) -> Self { Aad(aad) }
+    pub fn from(aad: &'a [u8]) -> Self { Aad(aad) }
 }
 
-impl Aad<[u8; 0]> {
+impl Aad<'static> {
     /// Construct an empty `Aad`.
-    pub fn empty() -> Self { Self::from([]) }
+    pub fn empty() -> Self { Self::from(&[]) }
 }
 
 /// `OpeningKey` and `SealingKey` are type-safety wrappers around `Key`, which
@@ -238,6 +220,7 @@ impl Aad<[u8; 0]> {
 struct Key {
     inner: KeyInner,
     algorithm: &'static Algorithm,
+    cpu_features: cpu::Features,
 }
 
 derive_debug_via_field!(Key, algorithm);
@@ -250,10 +233,11 @@ enum KeyInner {
 
 impl Key {
     fn new(algorithm: &'static Algorithm, key_bytes: &[u8]) -> Result<Self, error::Unspecified> {
-        cpu::cache_detected_features();
-        Ok(Key {
-            inner: (algorithm.init)(key_bytes)?,
+        let cpu_features = cpu::features();
+        Ok(Self {
+            inner: (algorithm.init)(key_bytes, cpu_features)?,
             algorithm,
+            cpu_features,
         })
     }
 
@@ -264,15 +248,22 @@ impl Key {
 
 /// An AEAD Algorithm.
 pub struct Algorithm {
-    init: fn(key: &[u8]) -> Result<KeyInner, error::Unspecified>,
+    init: fn(key: &[u8], cpu_features: cpu::Features) -> Result<KeyInner, error::Unspecified>,
 
-    seal: fn(key: &KeyInner, nonce: Nonce, aad: Aad<&[u8]>, in_out: &mut [u8]) -> Tag,
+    seal: fn(
+        key: &KeyInner,
+        nonce: Nonce,
+        aad: Aad,
+        in_out: &mut [u8],
+        cpu_features: cpu::Features,
+    ) -> Tag,
     open: fn(
         key: &KeyInner,
         nonce: Nonce,
-        aad: Aad<&[u8]>,
+        aad: Aad,
         in_prefix_len: usize,
         in_out: &mut [u8],
+        cpu_features: cpu::Features,
     ) -> Tag,
 
     key_len: usize,

@@ -66,7 +66,7 @@
 // The "NSA Guide" steps here are from from section 3.1, "Ephemeral Unified
 // Model."
 
-use crate::{ec, error, rand};
+use crate::{cpu, ec, error, rand};
 use untrusted;
 
 pub use crate::ec::{
@@ -99,16 +99,18 @@ pub struct EphemeralPrivateKey {
     alg: &'static Algorithm,
 }
 
-impl<'a> EphemeralPrivateKey {
+impl EphemeralPrivateKey {
     /// Generate a new ephemeral private key for the given algorithm.
     pub fn generate(
         alg: &'static Algorithm, rng: &rand::SecureRandom,
     ) -> Result<Self, error::Unspecified> {
+        let cpu_features = cpu::features();
+
         // NSA Guide Step 1.
         //
         // This only handles the key generation part of step 1. The rest of
         // step one is done by `compute_public_key()`.
-        let private_key = ec::Seed::generate(&alg.curve, rng)?;
+        let private_key = ec::Seed::generate(&alg.curve, rng, cpu_features)?;
         Ok(Self { private_key, alg })
     }
 
@@ -124,7 +126,7 @@ impl<'a> EphemeralPrivateKey {
     }
 
     #[cfg(test)]
-    pub fn bytes(&'a self) -> &'a [u8] { self.private_key.bytes_less_safe() }
+    pub fn bytes(&self) -> &[u8] { self.private_key.bytes_less_safe() }
 }
 
 /// A public key for key agreement.

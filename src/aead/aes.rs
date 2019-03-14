@@ -16,13 +16,19 @@ use super::{
     nonce::{self, Iv},
     shift, Block, Direction, BLOCK_LEN,
 };
-use crate::{bits::BitLength, c, endian::*, error, polyfill};
+use crate::{bits::BitLength, cpu, endian::*, error, polyfill};
+use libc::size_t;
 
-pub struct Key(AES_KEY);
+pub(crate) struct Key {
+    inner: AES_KEY,
+    cpu_features: cpu::Features,
+}
 
 impl Key {
     #[inline]
-    pub fn new(bytes: &[u8], variant: Variant) -> Result<Self, error::Unspecified> {
+    pub fn new(
+        bytes: &[u8], variant: Variant, cpu_features: cpu::Features,
+    ) -> Result<Self, error::Unspecified> {
         let key_bits = match variant {
             Variant::AES_128 => BitLength::from_usize_bits(128),
             Variant::AES_256 => BitLength::from_usize_bits(256),
@@ -36,17 +42,17 @@ impl Key {
             rounds: 0,
         };
 
-        match detect_implementation() {
+        match detect_implementation(cpu_features) {
             Implementation::HWAES => {
                 extern "C" {
                     fn GFp_aes_hw_set_encrypt_key(
-                        user_key: *const u8, bits: c::uint, key: &mut AES_KEY,
+                        user_key: *const u8, bits: libc::c_uint, key: &mut AES_KEY,
                     ) -> ZeroMeansSuccess;
                 }
                 Result::from(unsafe {
                     GFp_aes_hw_set_encrypt_key(
                         bytes.as_ptr(),
-                        key_bits.as_usize_bits() as c::uint,
+                        key_bits.as_usize_bits() as libc::c_uint,
                         &mut key,
                     )
                 })?;
@@ -56,13 +62,13 @@ impl Key {
             Implementation::VPAES => {
                 extern "C" {
                     fn GFp_vpaes_set_encrypt_key(
-                        user_key: *const u8, bits: c::uint, key: &mut AES_KEY,
+                        user_key: *const u8, bits: libc::c_uint, key: &mut AES_KEY,
                     ) -> ZeroMeansSuccess;
                 }
                 Result::from(unsafe {
                     GFp_vpaes_set_encrypt_key(
                         bytes.as_ptr(),
-                        key_bits.as_usize_bits() as c::uint,
+                        key_bits.as_usize_bits() as libc::c_uint,
                         &mut key,
                     )
                 })?;
@@ -71,20 +77,23 @@ impl Key {
             _ => {
                 extern "C" {
                     fn GFp_aes_nohw_set_encrypt_key(
-                        user_key: *const u8, bits: c::uint, key: &mut AES_KEY,
+                        user_key: *const u8, bits: libc::c_uint, key: &mut AES_KEY,
                     ) -> ZeroMeansSuccess;
                 }
                 Result::from(unsafe {
                     GFp_aes_nohw_set_encrypt_key(
                         bytes.as_ptr(),
-                        key_bits.as_usize_bits() as c::uint,
+                        key_bits.as_usize_bits() as libc::c_uint,
                         &mut key,
                     )
                 })?;
             },
         };
 
-        Ok(Key(key))
+        Ok(Self {
+            inner: key,
+            cpu_features,
+        })
     }
 
     #[inline]
@@ -92,13 +101,13 @@ impl Key {
         let aliasing_const: *const Block = &a;
         let aliasing_mut: *mut Block = &mut a;
 
-        match detect_implementation() {
+        match detect_implementation(self.cpu_features) {
             Implementation::HWAES => {
                 extern "C" {
                     fn GFp_aes_hw_encrypt(a: *const Block, r: *mut Block, key: &AES_KEY);
                 }
                 unsafe {
-                    GFp_aes_hw_encrypt(aliasing_const, aliasing_mut, &self.0);
+                    GFp_aes_hw_encrypt(aliasing_const, aliasing_mut, &self.inner);
                 }
             },
 
@@ -108,7 +117,7 @@ impl Key {
                     fn GFp_vpaes_encrypt(a: *const Block, r: *mut Block, key: &AES_KEY);
                 }
                 unsafe {
-                    GFp_vpaes_encrypt(aliasing_const, aliasing_mut, &self.0);
+                    GFp_vpaes_encrypt(aliasing_const, aliasing_mut, &self.inner);
                 }
             },
 
@@ -117,7 +126,7 @@ impl Key {
                     fn GFp_aes_nohw_encrypt(a: *const Block, r: *mut Block, key: &AES_KEY);
                 }
                 unsafe {
-                    GFp_aes_nohw_encrypt(aliasing_const, aliasing_mut, &self.0);
+                    GFp_aes_nohw_encrypt(aliasing_const, aliasing_mut, &self.inner);
                 }
             },
         }
@@ -150,16 +159,16 @@ impl Key {
         let blocks_u32 = blocks as u32;
         assert_eq!(blocks, polyfill::usize_from_u32(blocks_u32));
 
-        match detect_implementation() {
+        match detect_implementation(self.cpu_features) {
             Implementation::HWAES => {
                 extern "C" {
                     fn GFp_aes_hw_ctr32_encrypt_blocks(
-                        input: *const u8, output: *mut u8, blocks: c::size_t, key: &AES_KEY,
+                        input: *const u8, output: *mut u8, blocks: size_t, key: &AES_KEY,
                         ivec: &Counter,
                     );
                 }
                 unsafe {
-                    GFp_aes_hw_ctr32_encrypt_blocks(input, output, blocks, &self.0, ctr);
+                    GFp_aes_hw_ctr32_encrypt_blocks(input, output, blocks, &self.inner, ctr);
                 }
                 ctr.increment_by_less_safe(blocks_u32);
             },
@@ -168,12 +177,12 @@ impl Key {
             Implementation::BSAES => {
                 extern "C" {
                     fn GFp_bsaes_ctr32_encrypt_blocks(
-                        input: *const u8, output: *mut u8, blocks: c::size_t, key: &AES_KEY,
+                        input: *const u8, output: *mut u8, blocks: size_t, key: &AES_KEY,
                         ivec: &Counter,
                     );
                 }
                 unsafe {
-                    GFp_bsaes_ctr32_encrypt_blocks(input, output, blocks, &self.0, ctr);
+                    GFp_bsaes_ctr32_encrypt_blocks(input, output, blocks, &self.inner, ctr);
                 }
                 ctr.increment_by_less_safe(blocks_u32);
             },
@@ -198,7 +207,7 @@ impl Key {
     #[cfg(target_arch = "x86_64")]
     #[must_use]
     pub fn is_aes_hw(&self) -> bool {
-        match detect_implementation() {
+        match detect_implementation(self.cpu_features) {
             Implementation::HWAES => true,
             _ => false,
         }
@@ -206,14 +215,14 @@ impl Key {
 
     #[cfg(target_arch = "x86_64")]
     #[must_use]
-    pub(super) fn inner_less_safe(&self) -> &AES_KEY { &self.0 }
+    pub(super) fn inner_less_safe(&self) -> &AES_KEY { &self.inner }
 }
 
 // Keep this in sync with AES_KEY in aes.h.
 #[repr(C)]
 pub(super) struct AES_KEY {
     pub rd_key: [u32; 4 * (MAX_ROUNDS + 1)],
-    pub rounds: c::uint,
+    pub rounds: libc::c_uint,
 }
 
 // Keep this in sync with `AES_MAXNR` in aes.h.
@@ -240,31 +249,21 @@ pub enum Implementation {
     Fallback = 4,
 }
 
-fn detect_implementation() -> Implementation {
-    extern "C" {
-        fn GFp_aes_hw_capable() -> c::int;
-    }
-
-    if unsafe { GFp_aes_hw_capable() } != 0 {
+fn detect_implementation(cpu_features: cpu::Features) -> Implementation {
+    if cpu::intel::AES.available(cpu_features) || cpu::arm::AES.available(cpu_features) {
         return Implementation::HWAES;
     }
 
     #[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
     {
-        extern "C" {
-            fn GFp_vpaes_capable() -> c::int;
-        }
-        if unsafe { GFp_vpaes_capable() } != 0 {
+        if cpu::intel::SSSE3.available(cpu_features) {
             return Implementation::VPAES;
         }
     }
 
     #[cfg(target_arch = "arm")]
     {
-        extern "C" {
-            fn GFp_bsaes_capable() -> c::int;
-        }
-        if unsafe { GFp_bsaes_capable() } != 0 {
+        if cpu::arm::NEON.available(cpu_features) {
             return Implementation::BSAES;
         }
     }
@@ -274,7 +273,7 @@ fn detect_implementation() -> Implementation {
 
 #[must_use]
 #[repr(transparent)]
-pub struct ZeroMeansSuccess(c::int);
+pub struct ZeroMeansSuccess(libc::c_int);
 
 impl From<ZeroMeansSuccess> for Result<(), error::Unspecified> {
     fn from(ZeroMeansSuccess(value): ZeroMeansSuccess) -> Self {
@@ -293,7 +292,7 @@ mod tests {
 
     #[test]
     pub fn test_aes() {
-        test::from_file("src/aead/aes_tests.txt", |section, test_case| {
+        test::run(test_file!("aes_tests.txt"), |section, test_case| {
             assert_eq!(section, "");
             let key = consume_key(test_case, "Key");
             let input = test_case.consume_bytes("Input");
@@ -315,6 +314,6 @@ mod tests {
             32 => Variant::AES_256,
             _ => unreachable!(),
         };
-        Key::new(&key[..], variant).unwrap()
+        Key::new(&key[..], variant, cpu::features()).unwrap()
     }
 }

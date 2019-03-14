@@ -17,7 +17,7 @@
 use super::digest_scalar::digest_scalar;
 use crate::{
     arithmetic::montgomery::*,
-    digest,
+    cpu, digest,
     ec::{
         self,
         suite_b::{ops::*, private_key},
@@ -36,8 +36,7 @@ pub struct Algorithm {
     private_key_ops: &'static PrivateKeyOps,
     digest_alg: &'static digest::Algorithm,
     pkcs8_template: &'static pkcs8::Template,
-    format_rs:
-        for<'a> fn(ops: &'static ScalarOps, r: &Scalar, s: &Scalar, out: &'a mut [u8]) -> usize,
+    format_rs: fn(ops: &'static ScalarOps, r: &Scalar, s: &Scalar, out: &mut [u8]) -> usize,
     id: AlgorithmID,
 }
 
@@ -83,7 +82,7 @@ impl KeyPair {
     pub fn generate_pkcs8(
         alg: &'static Algorithm, rng: &rand::SecureRandom,
     ) -> Result<pkcs8::Document, error::Unspecified> {
-        let private_key = ec::Seed::generate(alg.curve, rng)?;
+        let private_key = ec::Seed::generate(alg.curve, rng, cpu::features())?;
         let public_key = private_key.compute_public_key()?;
         Ok(pkcs8::wrap_key(
             &alg.pkcs8_template,
@@ -105,7 +104,12 @@ impl KeyPair {
     pub fn from_pkcs8(
         alg: &'static Algorithm, input: untrusted::Input,
     ) -> Result<Self, error::KeyRejected> {
-        let key_pair = ec::suite_b::key_pair_from_pkcs8(alg.curve, alg.pkcs8_template, input)?;
+        let key_pair = ec::suite_b::key_pair_from_pkcs8(
+            alg.curve,
+            alg.pkcs8_template,
+            input,
+            cpu::features(),
+        )?;
         Ok(Self::new(alg, key_pair))
     }
 
@@ -118,7 +122,8 @@ impl KeyPair {
     pub fn from_private_key_and_public_key(
         alg: &'static Algorithm, private_key: untrusted::Input, public_key: untrusted::Input,
     ) -> Result<Self, error::KeyRejected> {
-        let key_pair = ec::suite_b::key_pair_from_bytes(alg.curve, private_key, public_key)?;
+        let key_pair =
+            ec::suite_b::key_pair_from_bytes(alg.curve, private_key, public_key, cpu::features())?;
         Ok(Self::new(alg, key_pair))
     }
 
@@ -240,9 +245,7 @@ impl AsRef<[u8]> for PublicKey {
     fn as_ref(&self) -> &[u8] { self.0.as_ref() }
 }
 
-fn format_rs_fixed<'a>(
-    ops: &'static ScalarOps, r: &Scalar, s: &Scalar, out: &'a mut [u8],
-) -> usize {
+fn format_rs_fixed(ops: &'static ScalarOps, r: &Scalar, s: &Scalar, out: &mut [u8]) -> usize {
     let scalar_len = ops.scalar_bytes_len();
 
     let (r_out, rest) = out.split_at_mut(scalar_len);
@@ -254,7 +257,7 @@ fn format_rs_fixed<'a>(
     2 * scalar_len
 }
 
-fn format_rs_asn1<'a>(ops: &'static ScalarOps, r: &Scalar, s: &Scalar, out: &'a mut [u8]) -> usize {
+fn format_rs_asn1(ops: &'static ScalarOps, r: &Scalar, s: &Scalar, out: &mut [u8]) -> usize {
     // This assumes `a` is not zero since neither `r` or `s` is allowed to be
     // zero.
     fn format_integer_tlv(ops: &ScalarOps, a: &Scalar, out: &mut [u8]) -> usize {
@@ -381,8 +384,8 @@ mod tests {
 
     #[test]
     fn signature_ecdsa_sign_fixed_test() {
-        test::from_file(
-            "src/ec/suite_b/ecdsa/ecdsa_sign_fixed_tests.txt",
+        test::run(
+            test_file!("ecdsa_sign_fixed_tests.txt"),
             |section, test_case| {
                 assert_eq!(section, "");
 
@@ -425,8 +428,8 @@ mod tests {
 
     #[test]
     fn signature_ecdsa_sign_asn1_test() {
-        test::from_file(
-            "src/ec/suite_b/ecdsa/ecdsa_sign_asn1_tests.txt",
+        test::run(
+            test_file!("ecdsa_sign_asn1_tests.txt"),
             |section, test_case| {
                 assert_eq!(section, "");
 

@@ -24,8 +24,9 @@
 // The goal for this implementation is to drive the overhead as close to zero
 // as possible.
 
-use crate::{c, cpu, debug, endian::*, polyfill};
+use crate::{cpu, debug, endian::*, polyfill};
 use core::{self, num::Wrapping};
+use libc::size_t;
 
 mod sha1;
 
@@ -61,19 +62,20 @@ pub struct Context {
 
     /// The context's algorithm.
     pub algorithm: &'static Algorithm,
+
+    cpu_features: cpu::Features,
 }
 
 impl Context {
     /// Constructs a new context.
-    pub fn new(algorithm: &'static Algorithm) -> Context {
-        cpu::cache_detected_features();
-
-        Context {
+    pub fn new(algorithm: &'static Algorithm) -> Self {
+        Self {
             algorithm,
             state: algorithm.initial_state,
             completed_data_blocks: 0,
             pending: [0u8; MAX_BLOCK_LEN],
             num_pending: 0,
+            cpu_features: cpu::features(),
         }
     }
 
@@ -156,7 +158,7 @@ impl Context {
             .checked_mul(8)
             .unwrap();
         self.pending[(self.algorithm.block_len - 8)..self.algorithm.block_len]
-            .copy_from_slice(BigEndian::from(completed_data_bits).as_ref());
+            .copy_from_slice(&u64::to_be_bytes(completed_data_bits));
 
         unsafe {
             (self.algorithm.block_data_order)(&mut self.state, self.pending.as_ptr(), 1);
@@ -246,7 +248,7 @@ pub struct Algorithm {
     /// The length of the length in the padding.
     len_len: usize,
 
-    block_data_order: unsafe extern "C" fn(state: &mut State, data: *const u8, num: c::size_t),
+    block_data_order: unsafe extern "C" fn(state: &mut State, data: *const u8, num: size_t),
     format_output: fn(input: State) -> Output,
 
     initial_state: State,
@@ -480,8 +482,8 @@ const SHA512_BLOCK_LEN: usize = 1024 / 8;
 const SHA512_LEN_LEN: usize = 128 / 8;
 
 extern "C" {
-    fn GFp_sha256_block_data_order(state: &mut State, data: *const u8, num: c::size_t);
-    fn GFp_sha512_block_data_order(state: &mut State, data: *const u8, num: c::size_t);
+    fn GFp_sha256_block_data_order(state: &mut State, data: *const u8, num: size_t);
+    fn GFp_sha512_block_data_order(state: &mut State, data: *const u8, num: size_t);
 }
 
 #[cfg(test)]
@@ -560,6 +562,7 @@ mod tests {
                 completed_data_blocks: max_blocks - 1,
                 pending: [0u8; digest::MAX_BLOCK_LEN],
                 num_pending: 0,
+                cpu_features: crate::cpu::features(),
             }
         }
 

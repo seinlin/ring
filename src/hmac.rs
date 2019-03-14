@@ -188,7 +188,7 @@ impl SigningKey {
     /// The key will be `recommended_key_len(digest_alg)` bytes long.
     pub fn generate(
         digest_alg: &'static digest::Algorithm, rng: &rand::SecureRandom,
-    ) -> Result<SigningKey, error::Unspecified> {
+    ) -> Result<Self, error::Unspecified> {
         // XXX: There should probably be a `digest::MAX_CHAINING_LEN`, but for
         // now `digest::MAX_OUTPUT_LEN` is good enough.
         let mut key_bytes = [0u8; digest::MAX_OUTPUT_LEN];
@@ -207,12 +207,12 @@ impl SigningKey {
     /// deserialized with `SigningKey::new()`.
     pub fn generate_serializable(
         digest_alg: &'static digest::Algorithm, rng: &rand::SecureRandom, key_bytes: &mut [u8],
-    ) -> Result<SigningKey, error::Unspecified> {
+    ) -> Result<Self, error::Unspecified> {
         if key_bytes.len() != recommended_key_len(digest_alg) {
             return Err(error::Unspecified);
         }
         rng.fill(key_bytes)?;
-        Ok(SigningKey::new(digest_alg, key_bytes))
+        Ok(Self::new(digest_alg, key_bytes))
     }
 
     /// Construct an HMAC signing key using the given digest algorithm and key
@@ -234,8 +234,8 @@ impl SigningKey {
     /// the truncation described above reduces their strength to only
     /// `digest_alg.output_len * 8` bits. Support for such keys is likely to be
     /// removed in a future version of *ring*.
-    pub fn new(digest_alg: &'static digest::Algorithm, key_value: &[u8]) -> SigningKey {
-        let mut key = SigningKey {
+    pub fn new(digest_alg: &'static digest::Algorithm, key_value: &[u8]) -> Self {
+        let mut key = Self {
             ctx_prototype: SigningContext {
                 inner: digest::Context::new(digest_alg),
                 outer: digest::Context::new(digest_alg),
@@ -251,19 +251,26 @@ impl SigningKey {
         };
 
         const IPAD: u8 = 0x36;
+
+        let mut padded_key = [IPAD; digest::MAX_BLOCK_LEN];
+        let padded_key = &mut padded_key[..digest_alg.block_len];
+
+        // If the key is shorter than one block then we're supposed to act like
+        // it is padded with zero bytes up to the block length. `x ^ 0 == x` so
+        // we can just leave the trailing bytes of `padded_key` untouched.
+        for (padded_key, key_value) in padded_key.iter_mut().zip(key_value.iter()) {
+            *padded_key ^= *key_value;
+        }
+        key.ctx_prototype.inner.update(&padded_key);
+
         const OPAD: u8 = 0x5C;
 
-        for b in key_value {
-            key.ctx_prototype.inner.update(&[IPAD ^ b]);
-            key.ctx_prototype.outer.update(&[OPAD ^ b]);
+        // Remove the `IPAD` masking, leaving the unmasked padded key, then
+        // mask with `OPAD`, all in one step.
+        for b in padded_key.iter_mut() {
+            *b ^= IPAD ^ OPAD;
         }
-
-        // If the key is shorter than one block then act as though the key is
-        // padded with zeros.
-        for _ in key_value.len()..digest_alg.block_len {
-            key.ctx_prototype.inner.update(&[IPAD]);
-            key.ctx_prototype.outer.update(&[OPAD]);
-        }
+        key.ctx_prototype.outer.update(&padded_key);
 
         key
     }
@@ -294,12 +301,7 @@ impl core::fmt::Debug for SigningContext {
 impl SigningContext {
     /// Constructs a new HMAC signing context using the given digest algorithm
     /// and key.
-    pub fn with_key(signing_key: &SigningKey) -> SigningContext {
-        SigningContext {
-            inner: signing_key.ctx_prototype.inner.clone(),
-            outer: signing_key.ctx_prototype.outer.clone(),
-        }
-    }
+    pub fn with_key(signing_key: &SigningKey) -> Self { signing_key.ctx_prototype.clone() }
 
     /// Updates the HMAC with all the data in `data`. `update` may be called
     /// zero or more times until `finish` is called.
@@ -333,9 +335,7 @@ pub fn sign(key: &SigningKey, data: &[u8]) -> Signature {
 }
 
 /// A key to use for HMAC authentication.
-pub struct VerificationKey {
-    wrapped: SigningKey,
-}
+pub struct VerificationKey(SigningKey);
 
 impl core::fmt::Debug for VerificationKey {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> Result<(), core::fmt::Error> {
@@ -355,15 +355,13 @@ impl VerificationKey {
     /// it will be padded with zeros. Similarly, if it is longer than the block
     /// length then it will be compressed using the digest algorithm.
     #[inline(always)]
-    pub fn new(digest_alg: &'static digest::Algorithm, key_value: &[u8]) -> VerificationKey {
-        VerificationKey {
-            wrapped: SigningKey::new(digest_alg, key_value),
-        }
+    pub fn new(digest_alg: &'static digest::Algorithm, key_value: &[u8]) -> Self {
+        Self(SigningKey::new(digest_alg, key_value))
     }
 
     /// The digest algorithm for the key.
     #[inline]
-    pub fn digest_algorithm(&self) -> &'static digest::Algorithm { self.wrapped.digest_algorithm() }
+    pub fn digest_algorithm(&self) -> &'static digest::Algorithm { self.0.digest_algorithm() }
 }
 
 /// Calculates the HMAC of `data` using the key `key`, and verifies whether the
@@ -374,7 +372,7 @@ impl VerificationKey {
 pub fn verify(
     key: &VerificationKey, data: &[u8], signature: &[u8],
 ) -> Result<(), error::Unspecified> {
-    verify_with_own_key(&key.wrapped, data, signature)
+    verify_with_own_key(&key.0, data, signature)
 }
 
 /// Calculates the HMAC of `data` using the signing key `key`, and verifies
@@ -480,8 +478,8 @@ mod tests {
     // that the generated key fills the entire `key_bytes` parameter.
     #[test]
     pub fn generate_serializable_tests() {
-        test::from_file(
-            "src/hmac_generate_serializable_tests.txt",
+        test::run(
+            test_file!("hmac_generate_serializable_tests.txt"),
             |section, test_case| {
                 assert_eq!(section, "");
                 let digest_alg = test_case.consume_digest_alg("HMAC").unwrap();

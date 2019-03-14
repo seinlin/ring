@@ -83,7 +83,7 @@ pub struct SystemRandom;
 impl SystemRandom {
     /// Constructs a new `SystemRandom`.
     #[inline(always)]
-    pub fn new() -> SystemRandom { SystemRandom }
+    pub fn new() -> Self { Self }
 }
 
 impl SecureRandom for SystemRandom {
@@ -95,7 +95,13 @@ impl sealed::Sealed for SystemRandom {}
 
 #[cfg(all(
     feature = "use_heap",
-    not(any(target_os = "linux", target_os = "macos", target_os = "ios", windows))
+    not(any(
+        target_os = "linux",
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "fuchsia",
+        windows
+    ))
 ))]
 use self::urandom::fill as fill_impl;
 
@@ -110,22 +116,35 @@ use self::sysrand_or_urandom::fill as fill_impl;
 
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 use self::darwin::fill as fill_impl;
+
+#[cfg(any(target_os = "fuchsia"))]
+use self::fuchsia::fill as fill_impl;
+
 use crate::sealed;
 
 #[cfg(target_os = "linux")]
 mod sysrand_chunk {
-    use crate::{c, error};
-    use libc;
-
-    extern "C" {
-        static GFp_SYS_GETRANDOM: c::long;
-    }
+    use crate::error;
+    use libc::{self, size_t};
 
     #[inline]
     pub fn chunk(dest: &mut [u8]) -> Result<usize, error::Unspecified> {
-        let chunk_len: c::size_t = dest.len();
-        let flags: c::uint = 0;
-        let r = unsafe { libc::syscall(GFp_SYS_GETRANDOM, dest.as_mut_ptr(), chunk_len, flags) };
+        // See `SYS_getrandom` in #include <sys/syscall.h>.
+
+        #[cfg(target_arch = "aarch64")]
+        const SYS_GETRANDOM: libc::c_long = 278;
+
+        #[cfg(target_arch = "arm")]
+        const SYS_GETRANDOM: libc::c_long = 384;
+
+        #[cfg(target_arch = "x86")]
+        const SYS_GETRANDOM: libc::c_long = 355;
+
+        #[cfg(target_arch = "x86_64")]
+        const SYS_GETRANDOM: libc::c_long = 318;
+
+        let chunk_len: size_t = dest.len();
+        let r = unsafe { libc::syscall(SYS_GETRANDOM, dest.as_mut_ptr(), chunk_len, 0) };
         if r < 0 {
             if unsafe { *libc::__errno_location() } == libc::EINTR {
                 // If an interrupt occurs while getrandom() is blocking to wait
@@ -141,26 +160,22 @@ mod sysrand_chunk {
 
 #[cfg(windows)]
 mod sysrand_chunk {
-    use crate::{c, error};
+    use crate::{error, polyfill};
     use core;
-
-    #[link(name = "advapi32")]
-    extern "system" {
-        #[link_name = "SystemFunction036"]
-        #[must_use]
-        fn RtlGenRandom(
-            random_buffer: *mut u8, random_buffer_length: c::win32::ULONG,
-        ) -> c::win32::BOOLEAN;
-    }
 
     #[inline]
     pub fn chunk(dest: &mut [u8]) -> Result<usize, error::Unspecified> {
-        assert!(core::mem::size_of::<usize>() >= core::mem::size_of::<c::win32::ULONG>());
-        let max_chunk_len = c::win32::ULONG::from(0u32).wrapping_sub(1) as usize;
-        assert_eq!(max_chunk_len, 0xffff_ffff);
-        let len = core::cmp::min(dest.len(), max_chunk_len);
+        use winapi::shared::wtypesbase::ULONG;
 
-        if unsafe { RtlGenRandom(dest.as_mut_ptr(), len as c::win32::ULONG) } == 0 {
+        assert!(core::mem::size_of::<usize>() >= core::mem::size_of::<ULONG>());
+        let len = core::cmp::min(dest.len(), polyfill::usize_from_u32(ULONG::max_value()));
+        let result = unsafe {
+            winapi::um::ntsecapi::RtlGenRandom(
+                dest.as_mut_ptr() as *mut winapi::ctypes::c_void,
+                len as ULONG,
+            )
+        };
+        if result == 0 {
             return Err(error::Unspecified);
         }
 
@@ -188,7 +203,8 @@ mod sysrand {
     feature = "use_heap",
     any(target_os = "redox", unix),
     not(any(target_os = "macos", target_os = "ios")),
-    not(all(target_os = "linux", not(feature = "dev_urandom_fallback")))
+    not(all(target_os = "linux", not(feature = "dev_urandom_fallback"))),
+    not(any(target_os = "fuchsia")),
 ))]
 mod urandom {
     use crate::error;
@@ -250,7 +266,7 @@ mod sysrand_or_urandom {
 
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 mod darwin {
-    use crate::{c, error};
+    use crate::error;
 
     pub fn fill(dest: &mut [u8]) -> Result<(), error::Unspecified> {
         let r = unsafe { SecRandomCopyBytes(kSecRandomDefault, dest.len(), dest.as_mut_ptr()) };
@@ -274,8 +290,25 @@ mod darwin {
         // For now `rnd` must be `kSecRandomDefault`.
         #[must_use]
         fn SecRandomCopyBytes(
-            rnd: &'static SecRandomRef, count: c::size_t, bytes: *mut u8,
-        ) -> c::int;
+            rnd: &'static SecRandomRef, count: libc::size_t, bytes: *mut u8,
+        ) -> libc::c_int;
+    }
+}
+
+#[cfg(any(target_os = "fuchsia"))]
+mod fuchsia {
+    use crate::error;
+
+    pub fn fill(dest: &mut [u8]) -> Result<(), error::Unspecified> {
+        unsafe {
+            zx_cprng_draw(dest.as_mut_ptr(), dest.len());
+        }
+        Ok(())
+    }
+
+    #[link(name = "zircon")]
+    extern "C" {
+        fn zx_cprng_draw(buffer: *mut u8, length: usize);
     }
 }
 

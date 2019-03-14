@@ -10,7 +10,7 @@ license-file = "LICENSE"
 name = "ring"
 readme = "doc/link-to-readme.md"
 repository = "https://github.com/briansmith/ring"
-version = "0.14.3"
+version = "0.14.6"
 
 # Prevent multiple versions of *ring* from being linked into the same program.
 links = "ring-asm"
@@ -39,9 +39,6 @@ include = [
     "crypto/cipher_extra/test/aes_128_gcm_siv_tests.txt",
     "crypto/cipher_extra/test/aes_256_gcm_siv_tests.txt",
     "crypto/constant_time_test.c",
-    "crypto/cpu-aarch64-linux.c",
-    "crypto/cpu-arm-linux.c",
-    "crypto/cpu-arm.c",
     "crypto/cpu-intel.c",
     "crypto/crypto.c",
     "crypto/curve25519/asm/x25519-asm-arm.S",
@@ -56,7 +53,6 @@ include = [
     "crypto/fipsmodule/aes/asm/bsaes-x86_64.pl",
     "crypto/fipsmodule/aes/asm/vpaes-x86.pl",
     "crypto/fipsmodule/aes/asm/vpaes-x86_64.pl",
-    "crypto/fipsmodule/aes/internal.h",
     "crypto/fipsmodule/bn/asm/armv4-mont.pl",
     "crypto/fipsmodule/bn/asm/armv8-mont.pl",
     "crypto/fipsmodule/bn/asm/x86-mont.pl",
@@ -66,7 +62,6 @@ include = [
     "crypto/fipsmodule/bn/internal.h",
     "crypto/fipsmodule/bn/montgomery.c",
     "crypto/fipsmodule/bn/montgomery_inv.c",
-    "crypto/fipsmodule/cipher/e_aes.c",
     "crypto/fipsmodule/ec/asm/ecp_nistz256-armv4.pl",
     "crypto/fipsmodule/ec/asm/ecp_nistz256-armv8.pl",
     "crypto/fipsmodule/ec/asm/ecp_nistz256-x86.pl",
@@ -278,6 +273,8 @@ include = [
     "tests/rsa_test_public_key_2048_debug.txt",
     "tests/signature_tests.rs",
     "third_party/fiat/curve25519.c",
+    "third_party/fiat/curve25519_32.h",
+    "third_party/fiat/curve25519_64.h",
     "third_party/fiat/curve25519_tables.h",
     "third_party/fiat/internal.h",
     "third_party/fiat/LICENSE",
@@ -304,12 +301,18 @@ name = "ring"
 
 [dependencies]
 untrusted = "0.6.2"
+libc = { version = "0.2.48", default_features = false }
 
-[target.'cfg(target_os = "linux")'.dependencies]
-libc = { version = "0.2.45" }
+[target.'cfg(not(target_os = "ios"))'.dependencies]
+spin = { version = "0.5.0" }
+
+[target.'cfg(any(target_os = "android", target_os = "linux"))'.dependencies]
 
 [target.'cfg(any(target_os = "redox", all(unix, not(any(target_os = "macos", target_os = "ios")))))'.dependencies]
 lazy_static = "1.2"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+winapi = { version = "0.3.6", default_features = false, features = ["ntsecapi", "wtypesbase"] }
 
 # Keep this in sync with `[dependencies]` in pregenerate_asm/Cargo.toml.
 [build-dependencies]

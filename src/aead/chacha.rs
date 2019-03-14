@@ -17,14 +17,15 @@ use super::{
     nonce::{self, Iv},
     Block, BLOCK_LEN,
 };
-use crate::{c, endian::*, polyfill::convert::*};
+use crate::{endian::*, polyfill::convert::*};
 use core;
+use libc::size_t;
 
 #[repr(C)]
 pub struct Key([Block; KEY_BLOCKS]);
 
-impl<'a> From<&'a [u8; KEY_LEN]> for Key {
-    fn from(value: &[u8; KEY_LEN]) -> Self { Key(<[Block; KEY_BLOCKS]>::from_(value)) }
+impl From<&'_ [u8; KEY_LEN]> for Key {
+    fn from(value: &[u8; KEY_LEN]) -> Self { Self(<[Block; KEY_BLOCKS]>::from_(value)) }
 }
 
 impl Key {
@@ -112,7 +113,7 @@ impl Key {
         /// `Counter`.
         extern "C" {
             fn GFp_ChaCha20_ctr32(
-                out: *mut u8, in_: *const u8, in_len: c::size_t, key: &Key, first_iv: &Iv,
+                out: *mut u8, in_: *const u8, in_len: size_t, key: &Key, first_iv: &Iv,
             );
         }
 
@@ -147,7 +148,7 @@ mod tests {
     // problem spreads to other platforms.
     #[test]
     pub fn chacha20_tests() {
-        test::from_file("src/aead/chacha_tests.txt", |section, test_case| {
+        test::run(test_file!("chacha_tests.txt"), |section, test_case| {
             assert_eq!(section, "");
 
             let key = test_case.consume_bytes("Key");

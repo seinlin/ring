@@ -15,7 +15,7 @@
 //! Elliptic curve operations on P-256 & P-384.
 
 use self::ops::*;
-use crate::{arithmetic::montgomery::*, ec, error, io::der, pkcs8};
+use crate::{arithmetic::montgomery::*, cpu, ec, error, io::der, limb::LimbMask, pkcs8};
 use untrusted;
 
 // NIST SP 800-56A Step 3: "If q is an odd prime p, verify that
@@ -142,7 +142,7 @@ fn verify_affine_point_is_on_the_curve_scaled(
     ops.elem_mul(&mut rhs, x);
     ops.elem_add(&mut rhs, b_scaled);
 
-    if !ops.elems_are_equal(&lhs, &rhs) {
+    if ops.elems_are_equal(&lhs, &rhs) != LimbMask::True {
         return Err(error::Unspecified);
     }
 
@@ -151,6 +151,7 @@ fn verify_affine_point_is_on_the_curve_scaled(
 
 pub(crate) fn key_pair_from_pkcs8(
     curve: &'static ec::Curve, template: &pkcs8::Template, input: untrusted::Input,
+    cpu_features: cpu::Features,
 ) -> Result<ec::KeyPair, error::KeyRejected> {
     let (ec_private_key, _) = pkcs8::unwrap_key(template, pkcs8::Version::V1Only, input)?;
     let (private_key, public_key) =
@@ -163,7 +164,7 @@ pub(crate) fn key_pair_from_pkcs8(
                 |input| key_pair_from_pkcs8_(template, input),
             )
         })?;
-    key_pair_from_bytes(curve, private_key, public_key)
+    key_pair_from_bytes(curve, private_key, public_key, cpu_features)
 }
 
 fn key_pair_from_pkcs8_<'a>(
@@ -179,7 +180,7 @@ fn key_pair_from_pkcs8_<'a>(
         .map_err(|error::Unspecified| error::KeyRejected::invalid_encoding())?;
 
     // [0] parameters (optional).
-    if input.peek(der::Tag::ContextSpecificConstructed0 as u8) {
+    if input.peek(u8::from(der::Tag::ContextSpecificConstructed0)) {
         let actual_alg_id =
             der::expect_tag_and_get_value(input, der::Tag::ContextSpecificConstructed0)
                 .map_err(|error::Unspecified| error::KeyRejected::invalid_encoding())?;
@@ -201,11 +202,11 @@ fn key_pair_from_pkcs8_<'a>(
     Ok((private_key, public_key))
 }
 
-pub fn key_pair_from_bytes(
+pub(crate) fn key_pair_from_bytes(
     curve: &'static ec::Curve, private_key_bytes: untrusted::Input,
-    public_key_bytes: untrusted::Input,
+    public_key_bytes: untrusted::Input, cpu_features: cpu::Features,
 ) -> Result<ec::KeyPair, error::KeyRejected> {
-    let seed = ec::Seed::from_bytes(curve, private_key_bytes)
+    let seed = ec::Seed::from_bytes(curve, private_key_bytes, cpu_features)
         .map_err(|error::Unspecified| error::KeyRejected::invalid_component())?;
 
     let r = ec::KeyPair::derive(seed)

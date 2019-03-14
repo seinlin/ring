@@ -12,15 +12,15 @@
 // OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
 // CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
-use crate::{c, error};
+use crate::error;
 
-/// A `c::int` returned from a foreign function containing **1** if the function
+/// An `int` returned from a foreign function containing **1** if the function
 /// was successful or **0** if an error occurred. This is the convention used by
 /// C code in `ring`.
 #[derive(Clone, Copy, Debug)]
 #[must_use]
 #[repr(transparent)]
-pub struct Result(c::int);
+pub struct Result(libc::c_int);
 
 impl From<Result> for core::result::Result<(), error::Unspecified> {
     fn from(ret: Result) -> Self {
@@ -34,41 +34,15 @@ impl From<Result> for core::result::Result<(), error::Unspecified> {
     }
 }
 
-// Adapt a BoringSSL test suite to a Rust test.
-//
-// The BoringSSL test suite is broken up into multiple files. Originally, they
-// were all executables with their own `main` functions. Those main functions
-// have been replaced with uniquely-named functions so that they can all be
-// linked into the same executable.
-#[cfg(test)]
-macro_rules! bssl_test {
-    ( $fn_name:ident, $bssl_test_main_fn_name:ident ) => {
-        #[test]
-        fn $fn_name() {
-            use $crate::{c, cpu};
-            extern "C" {
-                #[must_use]
-                fn $bssl_test_main_fn_name() -> c::int;
-            }
-
-            cpu::cache_detected_features();
-            ::std::env::set_current_dir(crate::test::ring_src_path()).unwrap();
-
-            let result = unsafe { $bssl_test_main_fn_name() };
-            assert_eq!(result, 0);
-        }
-    };
-}
-
 #[cfg(test)]
 mod tests {
     mod result {
-        use crate::{bssl, c};
+        use crate::bssl;
         use core::mem;
 
         #[test]
         fn size_and_alignment() {
-            type Underlying = c::int;
+            type Underlying = libc::c_int;
             assert_eq!(mem::size_of::<bssl::Result>(), mem::size_of::<Underlying>());
             assert_eq!(
                 mem::align_of::<bssl::Result>(),

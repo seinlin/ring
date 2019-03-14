@@ -46,7 +46,6 @@
 // internally.
 #![deny(
     missing_docs,
-    trivial_numeric_casts,
     unstable_features, // Used by `internal_benches`
     unused_qualifications,
     variant_size_differences,
@@ -54,6 +53,7 @@
 #![forbid(
     anonymous_parameters,
     trivial_casts,
+    trivial_numeric_casts,
     unused_extern_crates,
     unused_import_braces,
     unused_results,
@@ -72,8 +72,7 @@
     ),
     no_std
 )]
-#![cfg_attr(feature = "internal_benches", allow(unstable_features))]
-#![cfg_attr(feature = "internal_benches", feature(test))]
+#![cfg_attr(feature = "internal_benches", allow(unstable_features), feature(test))]
 
 #[macro_use]
 mod debug;
@@ -84,6 +83,10 @@ mod bssl;
 #[macro_use]
 mod polyfill;
 
+#[cfg(any(test, feature = "use_heap"))]
+#[macro_use]
+pub mod test;
+
 mod arithmetic;
 
 pub mod aead;
@@ -91,7 +94,6 @@ pub mod agreement;
 
 mod bits;
 
-mod c;
 pub mod constant_time;
 
 pub mod io;
@@ -113,9 +115,6 @@ mod rsa;
 
 pub mod signature;
 
-#[cfg(any(test, feature = "use_heap"))]
-pub mod test;
-
 mod sealed {
     /// Traits that are designed to only be implemented internally in *ring*.
     //
@@ -130,9 +129,4 @@ mod sealed {
     // impl sealed::Sealed for MyType {}
     // ```
     pub trait Sealed {}
-}
-
-#[cfg(test)]
-mod tests {
-    bssl_test!(test_constant_time, bssl_constant_time_test_main);
 }

@@ -13,8 +13,9 @@
 // OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
 // CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
-use crate::{c, polyfill};
+use crate::polyfill;
 use core::{self, num::Wrapping};
+use libc::size_t;
 
 pub const BLOCK_LEN: usize = 512 / 8;
 pub const CHAINING_LEN: usize = 160 / 8;
@@ -38,7 +39,7 @@ fn maj(x: W32, y: W32, z: W32) -> W32 { (x & y) | (x & z) | (y & z) }
 /// Unlike SHA-256, SHA-384, and SHA-512,
 /// there is no assembly language implementation.
 pub(super) unsafe extern "C" fn block_data_order(
-    state: &mut super::State, data: *const u8, num: c::size_t,
+    state: &mut super::State, data: *const u8, num: size_t,
 ) {
     let data = data as *const [[u8; 4]; 16];
     let blocks = core::slice::from_raw_parts(data, num);
@@ -52,7 +53,7 @@ fn block_data_order_safe(state: &mut [Wrapping<u32>; 256 / 32], blocks: &[[[u8; 
     let mut w: [W32; 80] = [Wrapping(0); 80];
     for block in blocks {
         for t in 0..16 {
-            w[t] = Wrapping(polyfill::slice::u32_from_be_u8(block[t]))
+            w[t] = Wrapping(u32::from_be_bytes(block[t]))
         }
         for t in 16..80 {
             let wt = w[t - 3] ^ w[t - 8] ^ w[t - 14] ^ w[t - 16];
