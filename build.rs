@@ -182,7 +182,7 @@ fn cpp_flags(target: &Target) -> &'static [&'static str] {
             "-Wextra",
             "-Wcast-align",
             "-Wcast-qual",
-            "-Wconversion",
+            // "-Wconversion",
             "-Wenum-compare",
             "-Wfloat-equal",
             "-Wformat=2",
