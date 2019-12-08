@@ -99,7 +99,6 @@ const RING_SRCS: &[(&[&str], &str)] = &[
     (&[ARM], "crypto/curve25519/asm/x25519-asm-arm.S"),
     (&[ARM], "crypto/fipsmodule/ec/asm/ecp_nistz256-armv4.pl"),
     (&[ARM], "crypto/fipsmodule/modes/asm/ghash-armv4.pl"),
-    (&[ARM], "crypto/poly1305/asm/poly1305-armv4.pl"),
     (&[ARM], "crypto/fipsmodule/sha/asm/sha256-armv4.pl"),
     (&[ARM], "crypto/fipsmodule/sha/asm/sha512-armv4.pl"),
 
