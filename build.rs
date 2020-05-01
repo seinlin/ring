@@ -14,10 +14,14 @@
 
 //! Build the non-Rust components.
 
+// It seems like it would be a good idea to use `log!` for logging, but it
+// isn't worth having the external dependencies (one for the `log` crate, and
+// another for the concrete logging implementation). Instead we use `eprintln!`
+// to log everything to stderr.
+
 #![forbid(
     anonymous_parameters,
     box_pointers,
-    legacy_directory_ownership,
     missing_copy_implementations,
     missing_debug_implementations,
     missing_docs,
@@ -261,7 +265,7 @@ fn ring_build_rs_main() {
     use std::env;
 
     for (key, value) in env::vars() {
-        println!("{}: {}", key, value);
+        eprintln!("ENV {}={}", key, value);
     }
 
     let out_dir = env::var("OUT_DIR").unwrap();
@@ -417,18 +421,17 @@ fn build_c_code(target: &Target, pregenerated: PathBuf, out_dir: &Path) {
 
     // XXX: Ideally, ring-test would only be built for `cargo test`, but Cargo
     // can't do that yet.
-    libs.into_iter()
-        .for_each(|&(lib_name, srcs, additional_srcs)| {
-            build_library(
-                &target,
-                &out_dir,
-                lib_name,
-                srcs,
-                additional_srcs,
-                warnings_are_errors,
-                includes_modified,
-            )
-        });
+    libs.iter().for_each(|&(lib_name, srcs, additional_srcs)| {
+        build_library(
+            &target,
+            &out_dir,
+            lib_name,
+            srcs,
+            additional_srcs,
+            warnings_are_errors,
+            includes_modified,
+        )
+    });
 
     println!(
         "cargo:rustc-link-search=native={}",
@@ -634,7 +637,7 @@ where
 }
 
 fn run_command(mut cmd: Command) {
-    println!("running {:?}", cmd);
+    eprintln!("running {:?}", cmd);
     let status = cmd.status().unwrap_or_else(|e| {
         panic!("failed to execute [{:?}]: {}", cmd, e);
     });

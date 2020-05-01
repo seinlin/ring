@@ -27,10 +27,14 @@ arm-unknown-linux-gnueabihf)
   export QEMU_LD_PREFIX=/usr/arm-linux-gnueabihf
   ;;
 aarch64-linux-android)
+  # XXX: Tests are built but not run because we couldn't get the emulator to work; see
+  # https://github.com/briansmith/ring/issues/838
   export ANDROID_ABI=aarch64
   ;;
 armv7-linux-androideabi)
-  export ANDROID_SYSTEM_IMAGE="system-images;android-18;default;armeabi-v7a"
+  # XXX: Tests are built but not run because we couldn't get the emulator to work; see
+  # https://github.com/briansmith/ring/issues/838
+  # export ANDROID_SYSTEM_IMAGE="system-images;android-18;default;armeabi-v7a"
   export ANDROID_ABI=armeabi-v7a
   ;;
 esac
@@ -142,7 +146,8 @@ if [[ "$KCOV" == "1" ]]; then
   # step above, but then "cargo test" we wouldn't be testing the configuration
   # we expect people to use in production.
   cargo clean
-  RUSTFLAGS="-C link-dead-code" \
+  CARGO_INCREMENTAL=0 \
+  RUSTFLAGS="-Zprofile -Ccodegen-units=1 -Clink-dead-code -Coverflow-checks=on -Zno-landing-pads" \
     cargo test -vv --no-run -j2  ${mode-} ${FEATURES_X-} --target=$TARGET_X
   mk/travis-install-kcov.sh
   for test_exe in `find target/$TARGET_X/debug -maxdepth 1 -executable -type f`; do
