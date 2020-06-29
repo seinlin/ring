@@ -189,7 +189,6 @@ fn cpp_flags(target: &Target) -> &'static [&'static str] {
             "-Wshadow",
             "-Wsign-compare",
             "-Wsign-conversion",
-            "-Wundef",
             "-Wuninitialized",
             "-Wwrite-strings",
             "-fno-strict-aliasing",
